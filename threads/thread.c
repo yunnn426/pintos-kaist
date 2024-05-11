@@ -180,17 +180,20 @@ thread_sleep(int64_t howLong) {
 
 	enum intr_level old_level;
 	ASSERT(!intr_context());
-	old_level = intr_disable();
+	// 1) intr disable
+	old_level = intr_disable(); 
 
 	curr = thread_current();
 	ASSERT(curr != idle_thread);
 
 	curr->local_ticks = howLong;
-	list_push_back(&sleep_list, &curr->elem);
-	set_global_ticks(howLong); 
+//	list_push_back(&sleep_list, &curr->elem);
+	list_insert_ordered(&sleep_list, &curr->elem, ticks_less ,&curr->local_ticks);
+	set_global_ticks(); 
 
 	thread_block();	// hread_block() 과 do_schedule 뭘 써야하지?
 
+	// 2) intr able 
 	intr_set_level(old_level);
 }
 
@@ -199,25 +202,24 @@ thread_wakeup(int64_t ticks) { // OS ticks from timer!
 
 	struct list_elem *e = list_begin (&sleep_list);
 	struct thread *cur;
+	struct list_elem *next;
 	ASSERT (intr_context ());
 	
 	// ticks와 동일한 시간에 깨어나야 하는 쓰레드가 여러개 있을 수 있으니까 반복문으로 체크합니다.
-  	while (e != list_end (&sleep_list)) // incr 'e' inside of the loop by doing e = list_next;
+  	while (!list_empty(&sleep_list)) // incr 'e' inside of the loop by doing e = list_next;
 	{
+		e = list_begin(&sleep_list);
         cur = list_entry (e, struct thread, elem); // iterate the sleep list !
 		
 		// Time to wake up
-		if (cur->local_ticks <= ticks) {
-			// e == &cur->elem
-			e = list_remove(e);  // e 갱신, //fix
-			thread_unblock(cur); // 이미 만들어진 함수에서 다 처리
-		}
-		else {
-			set_global_ticks(cur->local_ticks); // 이렇게 하면 global_ticks에 새로운 최솟값이 담기게 됨.
-			e=list_next(e); // list에서 삭제하지 않은 경우에만 e를 증가시켜줌.
-		}
+		if (cur->local_ticks > ticks) break;
+		// e == &cur->elem
+		list_remove(e);  // e 갱신, //fix
+		// next = list_pop_front(&sleep_list);
+		thread_unblock(cur); // 이미 만들어진 함수에서 다 처리
+		// list_push_back(&ready_list, next);
     }
-
+	set_global_ticks();
 }
 
 /* Prints thread statistics. */
@@ -656,11 +658,26 @@ allocate_tid (void) {
 }
 
 /* global_ticks getter and setter */
-void set_global_ticks(int64_t ticks) {
-	global_ticks = MIN(global_ticks,ticks);
+void set_global_ticks() {
+	struct list_elem *front = list_begin(&sleep_list); 
+	struct thread *tmp = list_entry(front, struct thread, elem);
+	global_ticks = MIN(tmp->local_ticks,global_ticks);
+
+	// struct thread *tmp = list_min(&sleep_list,ticks_less,NULL);
+	// global_ticks = MIN(tmp->local_ticks,global_ticks);
 }
 
 /* get global_ticks to track the next thread to wake up */
 int64_t get_global_ticks(void) {
 	return global_ticks;
+}
+
+bool
+ticks_less(const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED)
+{
+    const struct thread *a = list_entry(a_, struct thread, elem);
+    const struct thread *b = list_entry(b_, struct thread, elem);
+
+    return a->local_ticks < b->local_ticks;
 }

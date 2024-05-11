@@ -144,8 +144,10 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 int64_t get_global_ticks(void);
-void set_global_ticks(int64_t ticks);
+void set_global_ticks();
 void thread_wakeup(int64_t ticks);
 void thread_sleep(int64_t howLong);
+bool ticks_less(const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED);
 
 #endif /* threads/thread.h */
