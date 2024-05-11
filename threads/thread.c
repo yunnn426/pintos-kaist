@@ -657,8 +657,7 @@ allocate_tid (void) {
 
 /* global_ticks getter and setter */
 void set_global_ticks(int64_t ticks) {
-	// global_ticks = MIN(global_ticks,ticks);
-	global_ticks = list_min()
+	global_ticks = MIN(global_ticks,ticks);
 }
 
 /* get global_ticks to track the next thread to wake up */
