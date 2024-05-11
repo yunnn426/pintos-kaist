@@ -27,6 +27,10 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+static struct list sleep_list;
+
+/* Global ticks that can wake up the sleeping threads */
+static int64_t global_ticks;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -108,7 +112,11 @@ thread_init (void) {
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
+	list_init (&sleep_list);
 	list_init (&destruction_req);
+
+	/* Init global_ticks to track the minimum ticks */
+	global_ticks = INT64_MAX; // global_ticks의 타입은 
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -152,6 +160,64 @@ thread_tick (void) {
 	/* Enforce preemption. */
 	if (++thread_ticks >= TIME_SLICE)
 		intr_yield_on_return ();
+}
+
+/*  Threads need to sleep instead of busy wait! 
+
+	if the current thread is not idle thread,
+	store the local tick to wake up, -> to thread strcut
+
+	update the global tick if necessary, -> find the next minimum val among threads in the list
+
+	and call schedule()
+
+	when you manipulate thread list, disable interrupt!!
+*/
+void
+thread_sleep(int64_t howLong) {
+
+	struct thread *curr;
+
+	enum intr_level old_level;
+	ASSERT(!intr_context());
+	old_level = intr_disable();
+
+	curr = thread_current();
+	ASSERT(curr != idle_thread);
+
+	curr->local_ticks = howLong;
+	list_push_back(&sleep_list, &curr->elem);
+	set_global_ticks(howLong); 
+
+	thread_block();	// hread_block() 과 do_schedule 뭘 써야하지?
+
+	intr_set_level(old_level);
+}
+
+void
+thread_wakeup(int64_t ticks) { // OS ticks from timer! 
+
+	struct list_elem *e = list_begin (&sleep_list);
+	struct thread *cur;
+	ASSERT (intr_context ());
+	
+	// ticks와 동일한 시간에 깨어나야 하는 쓰레드가 여러개 있을 수 있으니까 반복문으로 체크합니다.
+  	while (e != list_end (&sleep_list)) // incr 'e' inside of the loop by doing e = list_next;
+	{
+        cur = list_entry (e, struct thread, elem); // iterate the sleep list !
+		
+		// Time to wake up
+		if (cur->local_ticks <= ticks) {
+			// e == &cur->elem
+			e = list_remove(e);  // e 갱신, //fix
+			thread_unblock(cur); // 이미 만들어진 함수에서 다 처리
+		}
+		else {
+			set_global_ticks(cur->local_ticks); // 이렇게 하면 global_ticks에 새로운 최솟값이 담기게 됨.
+			e=list_next(e); // list에서 삭제하지 않은 경우에만 e를 증가시켜줌.
+		}
+    }
+
 }
 
 /* Prints thread statistics. */
@@ -587,4 +653,15 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+/* global_ticks getter and setter */
+void set_global_ticks(int64_t ticks) {
+	// global_ticks = MIN(global_ticks,ticks);
+	global_ticks = list_min()
+}
+
+/* get global_ticks to track the next thread to wake up */
+int64_t get_global_ticks(void) {
+	return global_ticks;
 }

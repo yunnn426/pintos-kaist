@@ -87,14 +87,14 @@ timer_elapsed (int64_t then) {
 	return timer_ticks () - then;
 }
 
+// Challenge -> 'start' 변수가 invalid 할 수 있다. 이럴 땐 어떻게 고치냐? (아직은 생각하지말라함)
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
-	int64_t start = timer_ticks ();
+	int64_t start = timer_ticks();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	thread_sleep(start + ticks);		// 확인사항	
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -126,6 +126,23 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+
+	int64_t next = get_global_ticks();
+	if (next <= ticks) { 
+		thread_wakeup(ticks);
+	}
+	
+	/*
+		code to add : 
+		check sleep list and the global tick.
+		find any threads to wake up,
+		move them to the ready list if needed
+		update the global tick.
+	*/
+
+	// 1) 우선 sleep list 깨울 녀석이 있는지 확인해야 한다. (global tick과 스레드의 local tick 비교)
+	// 2) 깨울 수 있으면 깨워준다.
+
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
