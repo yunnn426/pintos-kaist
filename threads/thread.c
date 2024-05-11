@@ -359,6 +359,14 @@ thread_sleep(int64_t ticks) {
 	intr_set_level (old_level);
 }
 
+void
+set_global_ticks() {
+	struct list_elem *front = list_begin(&sleep_list); // sleep list의 첫번째 스레드 반환
+	struct thread *t = list_entry(front, struct thread, elem);
+	
+	global_ticks = t->tick;
+}
+
 /* sleep list에서 깨울 스레드를 확인하고 ready list로 옮긴다. */
 void 
 thread_wakeup(int64_t nowtime) {
@@ -372,19 +380,17 @@ thread_wakeup(int64_t nowtime) {
 
 		if (t->tick > nowtime) break;
 		
+		enum intr_level old_level;
+		old_level = intr_disable ();	// 인터럽트 비활성화
+
 		struct list_elem *move = list_pop_front(&sleep_list); // 깨울 시간이 된 스레드를 ready_list로 옮긴다
+		t->status = THREAD_READY;
 		list_push_back(&ready_list, move);
+
+		intr_set_level (old_level);
 	}
 	
 	set_global_ticks();
-}
-
-void
-set_global_ticks() {
-	struct list_elem *front = list_begin(&sleep_list); // sleep list의 첫번째 스레드 반환
-	struct thread *t = list_entry(front, struct thread, elem);
-	
-	global_ticks = t->tick;
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
