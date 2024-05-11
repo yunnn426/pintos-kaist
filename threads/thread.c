@@ -28,6 +28,9 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* sleeping(BLOCKED) 상태에 있는 스레드 저장 */
+static struct list sleep_list;	
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -109,6 +112,9 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	
+	/* sleep list init */
+	list_init(&sleep_list);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -308,6 +314,79 @@ thread_yield (void) {
 	intr_set_level (old_level);
 }
 
+static long long global_ticks = 1e9;	/* local tick 중 최소값을 저장 */
+
+/* tick 오름차순으로 정렬하기 위한 비교 함수 */
+bool compare_func(const struct list_elem *a,
+                  const struct list_elem *b,
+                  void *aux) {
+    // 비교할 구조체 포인터로 형변환
+    const struct thread *thread_a = list_entry(a, struct thread, elem);
+    const struct thread *thread_b = list_entry(b, struct thread, elem);
+
+    // 비교 로직을 구현하여 A가 B보다 작은지 여부를 반환
+    return thread_a->tick < thread_b->tick;
+}
+
+/* 스레드를 sleep시키는 함수 */
+void
+thread_sleep(int64_t ticks) {
+	/* 현재 스레드가 idle 상태가 아니라면,
+		즉 sleeping 상태가 아니라면,
+
+		1. 스레드 상태를 BLOCKED로 바꿔준다. 
+			(enum thread_status 참고, thread 구조체 참고 @thread.h)
+		2. 필요하다면 global tick을 갱신한다.
+		3. schedule()을 호출한다. */
+	
+	/* 주의: 스레드 리스트에 새로운 스레드를 추가할 때, 인터럽트를 비활성화 시켜주어야 한다. */
+
+	struct thread *curr = thread_current ();	// 현재 스레드 정보
+	enum intr_level old_level;
+
+	ASSERT (!intr_context ());
+
+	old_level = intr_disable ();	// 인터럽트 비활성화
+	if (curr != idle_thread) {	// idle 상태가 아니라면
+		// sleep list에 추가 (정렬)
+		curr->tick = ticks;  // 스레드의 local tick 갱신
+		list_insert_ordered(&sleep_list, &curr->elem, compare_func, &curr->tick); // sleep list에 local tick 오름차순으로 추가
+
+		curr->status = THREAD_BLOCKED; // 스레드를 BLOCKED로
+		global_ticks = (global_ticks < ticks) ? global_ticks : ticks; // global tick 갱신
+	}
+	schedule();
+	intr_set_level (old_level);
+}
+
+/* sleep list에서 깨울 스레드를 확인하고 ready list로 옮긴다. */
+void 
+thread_wakeup(int64_t nowtime) {
+	if (global_ticks > nowtime)	// 아직 깨울 스레드가 없다
+		return;
+
+	while (!list_empty(&sleep_list)) {
+		
+		struct list_elem *front = list_begin(&sleep_list); // sleep list의 첫번째 스레드 반환
+		struct thread *t = list_entry(front, struct thread, elem);
+
+		if (t->tick > nowtime) break;
+		
+		struct list_elem *move = list_pop_front(&sleep_list); // 깨울 시간이 된 스레드를 ready_list로 옮긴다
+		list_push_back(&ready_list, move);
+	}
+	
+	set_global_ticks();
+}
+
+void
+set_global_ticks() {
+	struct list_elem *front = list_begin(&sleep_list); // sleep list의 첫번째 스레드 반환
+	struct thread *t = list_entry(front, struct thread, elem);
+	
+	global_ticks = t->tick;
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
@@ -409,6 +488,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
+	/* init local tick */
+	t->tick = 0;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -462,8 +544,10 @@ do_iret (struct intr_frame *tf) {
    It's not safe to call printf() until the thread switch is
    complete.  In practice that means that printf()s should be
    added at the end of the function. */
+
+/* 문맥을 전환시키는 부분 */
 static void
-thread_launch (struct thread *th) {
+thread_launch (struct thread *th) {		
 	uint64_t tf_cur = (uint64_t) &running_thread ()->tf;
 	uint64_t tf = (uint64_t) &th->tf;
 	ASSERT (intr_get_level () == INTR_OFF);

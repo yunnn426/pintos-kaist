@@ -93,8 +93,12 @@ timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	// while (timer_elapsed (start) < ticks)
+	// 	thread_yield ();
+
+	if (timer_elapsed(start) < ticks) {		// implement by yourself
+		thread_sleep(start + ticks);
+	}
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -123,9 +127,17 @@ timer_print_stats (void) {
 
 /* Timer interrupt handler. */
 static void
-timer_interrupt (struct intr_frame *args UNUSED) {
+timer_interrupt (struct intr_frame *args UNUSED) {//!! // 여기서 wakeup() // setter, getter
 	ticks++;
 	thread_tick ();
+
+	/* code to add:
+		sleep list와 global tick을 확인한 후
+		깨울 스레드가 있으면 ready list로 옮긴다.
+		global tick을 갱신한다.
+	*/
+
+	thread_wakeup(ticks);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
