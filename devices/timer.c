@@ -137,6 +137,8 @@ timer_interrupt (struct intr_frame *args UNUSED) {//!! // 여기서 wakeup() // 
 		global tick을 갱신한다.
 	*/
 
+	if (get_global_ticks() > ticks) 	// 아직 깨울 스레드가 없다
+		return;
 	thread_wakeup(ticks);
 }
 

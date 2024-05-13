@@ -66,6 +66,15 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 
+/* functions added for 1) alarm clock */
+bool compare_func(const struct list_elem *a,
+                  const struct list_elem *b,
+                  void *aux);
+void thread_sleep(int64_t ticks);
+void set_global_ticks();
+int64_t get_global_ticks();
+void thread_wakeup(int64_t nowtime);
+
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
@@ -238,6 +247,7 @@ thread_block (void) {
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
+/* unblock: 인터럽트 비활성화 -> ready list에 추가 -> Ready로 상태 변경 -> 인터럽트 복귀 */
 void
 thread_unblock (struct thread *t) {
 	enum intr_level old_level;
@@ -314,7 +324,7 @@ thread_yield (void) {
 	intr_set_level (old_level);
 }
 
-static long long global_ticks = 1e9;	/* local tick 중 최소값을 저장 */
+static long long global_ticks;	/* local tick 중 최소값을 저장 */
 
 /* tick 오름차순으로 정렬하기 위한 비교 함수 */
 bool compare_func(const struct list_elem *a,
@@ -329,68 +339,130 @@ bool compare_func(const struct list_elem *a,
 }
 
 /* 스레드를 sleep시키는 함수 */
-void
-thread_sleep(int64_t ticks) {
-	/* 현재 스레드가 idle 상태가 아니라면,
-		즉 sleeping 상태가 아니라면,
+/* 정렬된 리스트에 추가 */
+// void
+// thread_sleep(int64_t ticks) {
+// 	/* 현재 스레드가 idle 상태가 아니라면,
+// 		즉 sleeping 상태가 아니라면,
 
-		1. 스레드 상태를 BLOCKED로 바꿔준다. 
-			(enum thread_status 참고, thread 구조체 참고 @thread.h)
-		2. 필요하다면 global tick을 갱신한다.
-		3. schedule()을 호출한다. */
+// 		1. 스레드 상태를 BLOCKED로 바꿔준다. 
+// 			(enum thread_status 참고, thread 구조체 참고 @thread.h)
+// 		2. 필요하다면 global tick을 갱신한다.
+// 		3. schedule()을 호출한다. */
 	
-	/* 주의: 스레드 리스트에 새로운 스레드를 추가할 때, 인터럽트를 비활성화 시켜주어야 한다. */
+// 	/* 주의: 스레드 리스트에 새로운 스레드를 추가할 때, 인터럽트를 비활성화 시켜주어야 한다. */
 
-	struct thread *curr = thread_current ();	// 현재 스레드 정보
+// 	struct thread *curr = thread_current ();	// 현재 스레드 정보
+// 	enum intr_level old_level;
+
+// 	ASSERT (!intr_context ());
+
+// 	old_level = intr_disable ();	// 인터럽트 비활성화
+// 	if (curr != idle_thread) {	// idle 상태가 아니라면
+// 		// sleep list에 추가 (정렬)
+// 		curr->tick = ticks;  // 스레드의 local tick 갱신
+// 		list_insert_ordered(&sleep_list, &curr->elem, compare_func, &curr->tick); // sleep list에 local tick 오름차순으로 추가
+
+// 		curr->status = THREAD_BLOCKED; // 스레드를 BLOCKED로
+// 		global_ticks = (global_ticks < ticks) ? global_ticks : ticks; // global tick 갱신
+// 	}
+// 	schedule();
+// 	intr_set_level (old_level);
+// }
+
+/* 정렬하지 않고 sleep list 맨 뒤에 추가 */
+void thread_sleep(int64_t ticks) {
+	struct thread *curr = thread_current();
 	enum intr_level old_level;
 
-	ASSERT (!intr_context ());
+	ASSERT(!intr_context());
 
-	old_level = intr_disable ();	// 인터럽트 비활성화
-	if (curr != idle_thread) {	// idle 상태가 아니라면
-		// sleep list에 추가 (정렬)
-		curr->tick = ticks;  // 스레드의 local tick 갱신
-		list_insert_ordered(&sleep_list, &curr->elem, compare_func, &curr->tick); // sleep list에 local tick 오름차순으로 추가
+	old_level = intr_disable();
 
-		curr->status = THREAD_BLOCKED; // 스레드를 BLOCKED로
-		global_ticks = (global_ticks < ticks) ? global_ticks : ticks; // global tick 갱신
+	if (curr != idle_thread) {
+		curr->tick = ticks;		// local tick 저장	
+		list_push_back(&sleep_list, &curr->elem);	// sleep list 뒤에 추가
+		thread_block(); 	// thread block에서 상태 변경 & schedule()
+		global_ticks = (global_ticks < ticks) ? global_ticks : ticks;	// global tick 갱신
 	}
-	schedule();
-	intr_set_level (old_level);
+	intr_set_level(old_level);
 }
 
-void
-set_global_ticks() {
-	struct list_elem *front = list_begin(&sleep_list); // sleep list의 첫번째 스레드 반환
-	struct thread *t = list_entry(front, struct thread, elem);
+/* 정렬된 sleep list의 경우 */
+// void
+// set_global_ticks() {
+// 	struct list_elem *front = list_begin(&sleep_list); // sleep list의 첫번째 스레드 반환
+// 	struct thread *t = list_entry(front, struct thread, elem);
 	
-	global_ticks = t->tick;
+// 	global_ticks = t->tick;
+// }
+
+/* 정렬되지 않은 sleep list의 경우 */
+void set_global_ticks() {
+	struct list_elem *e = list_begin(&sleep_list);
+	int64_t tick = 1e9;
+
+	/* sleep list를 순회하며 최소 local tick을 찾는다. */
+	while (e != list_end(&sleep_list)) {
+		struct thread *t = list_entry(e, struct thread, elem);
+		tick = (tick < t->tick) ? tick : t->tick;	
+
+		e = list_next(e);
+	}
+
+	return tick;
+}
+
+int64_t
+get_global_ticks() {
+	return global_ticks;
 }
 
 /* sleep list에서 깨울 스레드를 확인하고 ready list로 옮긴다. */
+/* 정렬된 sleep list인 경우 */
+// void 
+// thread_wakeup(int64_t nowtime) {
+// 	// if (global_ticks > nowtime)	// 아직 깨울 스레드가 없다
+// 	// 	return;
+
+// 	while (!list_empty(&sleep_list)) {
+		
+// 		struct list_elem *front = list_begin(&sleep_list); // sleep list의 첫번째 스레드 반환
+// 		struct thread *t = list_entry(front, struct thread, elem);
+
+// 		if (t->tick > nowtime) break;
+		
+// 		enum intr_level old_level;
+// 		old_level = intr_disable ();	// 인터럽트 비활성화
+
+// 		struct list_elem *move = list_pop_front(&sleep_list); // 깨울 시간이 된 스레드를 ready_list로 옮긴다
+// 		t->status = THREAD_READY;
+// 		list_push_back(&ready_list, move);
+
+// 		intr_set_level (old_level);
+// 	}
+	
+// 	set_global_ticks();
+// }
+
+/* 정렬되지 않은 sleep list인 경우 */
 void 
 thread_wakeup(int64_t nowtime) {
-	if (global_ticks > nowtime)	// 아직 깨울 스레드가 없다
-		return;
-
-	while (!list_empty(&sleep_list)) {
-		
-		struct list_elem *front = list_begin(&sleep_list); // sleep list의 첫번째 스레드 반환
-		struct thread *t = list_entry(front, struct thread, elem);
-
-		if (t->tick > nowtime) break;
-		
-		enum intr_level old_level;
-		old_level = intr_disable ();	// 인터럽트 비활성화
-
-		struct list_elem *move = list_pop_front(&sleep_list); // 깨울 시간이 된 스레드를 ready_list로 옮긴다
-		t->status = THREAD_READY;
-		list_push_back(&ready_list, move);
-
-		intr_set_level (old_level);
-	}
+	struct list_elem *e = list_begin(&sleep_list); // sleep list의 첫번째 스레드 반환
 	
-	set_global_ticks();
+	while (e != list_end(&sleep_list)) {	// list_end returns tail
+		struct thread *t = list_entry(e, struct thread, elem);	// e의 스레드 구조체
+		
+		if (t->tick > nowtime) {	// 아직 깨울 시간이 아니다
+			e = list_next(e);	// list_next returns tail if elem is the last element
+			set_global_ticks();
+			continue;
+		}	
+		
+		e = list_remove(e);		// sleep list에서 삭제
+		/* unblock: 인터럽트 비활성화 -> ready list에 추가 -> Ready로 상태 변경 -> 인터럽트 복귀 */
+		thread_unblock(t);
+	}
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
