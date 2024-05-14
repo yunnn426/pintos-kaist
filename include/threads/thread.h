@@ -97,6 +97,7 @@ struct thread {
 
 	int64_t tick;						/* local tick: 현재 시간 + sleep 시간 */
 
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -145,4 +146,26 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
+/* functions added */
+/* 1) alarm clock */
+void thread_sleep(int64_t ticks);
+void set_global_ticks();
+int64_t get_global_ticks();
+void thread_wakeup(int64_t nowtime);
+
+/* 2) priority scheduling */
+void thread_preempt();
+
+/* functions for comare */
+/* 1) alarm clock */
+bool compare_tick(const struct list_elem *a,
+                  const struct list_elem *b,
+                  void *aux);
+
+/* 2) priority scheduling */
+bool compare_priority(const struct list_elem *a,
+						const struct list_elem *b,
+						void *aux);
+
 #endif /* threads/thread.h */
+
