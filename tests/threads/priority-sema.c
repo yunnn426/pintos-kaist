@@ -32,14 +32,14 @@ test_priority_sema (void)
 
   for (i = 0; i < 10; i++) 
     {
-      sema_up (&sema);
-      msg ("Back in main thread."); 
+      sema_up (&sema);  // 자원을 반환
+      msg ("Back in main thread.");   
     }
 }
 
 static void
 priority_sema_thread (void *aux UNUSED) 
 {
-  sema_down (&sema);
-  msg ("Thread %s woke up.", thread_name ());
+  sema_down (&sema);  // 자원을 요청
+  msg ("Thread %s woke up.", thread_name ());   // 자원이 사용 가능해지면 wake up
 }
