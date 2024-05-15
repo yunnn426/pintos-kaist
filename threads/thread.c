@@ -67,13 +67,21 @@ static void schedule (void);
 static tid_t allocate_tid (void);
 
 /* functions added for 1) alarm clock */
-bool compare_func(const struct list_elem *a,
+bool compare_tick(const struct list_elem *a,
                   const struct list_elem *b,
                   void *aux);
 void thread_sleep(int64_t ticks);
 void set_global_ticks();
 int64_t get_global_ticks();
 void thread_wakeup(int64_t nowtime);
+
+/* functions added for 2) priority */
+bool compare_priority(const struct list_elem *a,
+					const struct list_elem *b,
+					void *aux);
+/* ready list의 첫 번째 스레드와 현재 실행중인 스레드를 비교한다.
+	더 높은 우선순위의 스레드에게 yield한다. */
+void thread_preempt();
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -222,6 +230,8 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
+	/* check if preemptable */
+	thread_preempt();
 	return tid;
 }
 
@@ -256,7 +266,8 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	// list_push_back (&ready_list, &t->elem);		// 기존의 그냥 ready list 뒤에 추가하는 방식에서 
+	list_insert_ordered(&ready_list, &t->elem, compare_priority, NULL);		// 우선순위 순서대로 ready list에 추가한다.
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -318,8 +329,10 @@ thread_yield (void) {
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
-	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+	if (curr != idle_thread) {
+		// list_push_back (&ready_list, &curr->elem);		// 기존의 그냥 ready list 뒤에 추가하는 방식에서 
+		list_insert_ordered(&ready_list, &curr->elem, compare_priority, NULL);		// 우선순위 순서대로 ready list에 추가한다.
+	}
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -327,7 +340,7 @@ thread_yield (void) {
 static long long global_ticks;	/* local tick 중 최소값을 저장 */
 
 /* tick 오름차순으로 정렬하기 위한 비교 함수 */
-bool compare_func(const struct list_elem *a,
+bool compare_tick(const struct list_elem *a,
                   const struct list_elem *b,
                   void *aux) {
     // 비교할 구조체 포인터로 형변환
@@ -336,6 +349,17 @@ bool compare_func(const struct list_elem *a,
 
     // 비교 로직을 구현하여 A가 B보다 작은지 여부를 반환
     return thread_a->tick < thread_b->tick;
+}
+
+/* priority 내림차순으로 정렬하기 위한 비교 함수 */
+bool compare_priority(const struct list_elem *a,
+					const struct list_elem *b,
+					void *aux) {
+	const struct thread *thread_a = list_entry(a, struct thread, elem);
+    const struct thread *thread_b = list_entry(b, struct thread, elem);
+
+	// 우선순위가 더 높은 것을 반환한다.
+	return thread_a->priority > thread_b->priority;
 }
 
 /* 스레드를 sleep시키는 함수 */
@@ -361,7 +385,7 @@ thread_sleep(int64_t ticks) {
 	if (curr != idle_thread) {	// idle 상태가 아니라면
 		// sleep list에 추가 (정렬)
 		curr->tick = ticks;  // 스레드의 local tick 갱신
-		list_insert_ordered(&sleep_list, &curr->elem, compare_func, &curr->tick); // sleep list에 local tick 오름차순으로 추가
+		list_insert_ordered(&sleep_list, &curr->elem, compare_tick, &curr->tick); // sleep list에 local tick 오름차순으로 추가
 
 		curr->status = THREAD_BLOCKED; // 스레드를 BLOCKED로
 		global_ticks = (global_ticks < ticks) ? global_ticks : ticks; // global tick 갱신
@@ -437,7 +461,8 @@ thread_wakeup(int64_t nowtime) {
 
 		struct list_elem *move = list_pop_front(&sleep_list); // 깨울 시간이 된 스레드를 ready_list로 옮긴다
 		t->status = THREAD_READY;
-		list_push_back(&ready_list, move);
+		// list_push_back(&ready_list, move);		// 기존의 그냥 ready list 뒤에 추가하는 방식에서 
+		list_insert_ordered(&ready_list, move, compare_priority, NULL);		// 우선순위 순서대로 ready list에 추가한다.
 
 		intr_set_level (old_level);
 	}
@@ -468,7 +493,15 @@ thread_wakeup(int64_t nowtime) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	thread_current ()->priority = new_priority;		// 새로운 우선순위 설정
+	
+	list_sort(&ready_list, compare_priority, NULL);		// 다시 ready list를 정렬한다. 
+	thread_preempt();	// 선점 여부를 확인한다.
+	/* 현재 스레드의 새로운 우선순위와 ready list의 첫 요소 (가장 우선순위가 높은) 비교한다.
+		현재 스레드의 우선순위가 더 낮다면, CPU를 yield한다. */
+	// if (thread_current()->priority < list_entry(list_begin(&ready_list), struct thread, elem)) {
+	// 	thread_yield();
+	// }
 }
 
 /* Returns the current thread's priority. */
@@ -749,4 +782,15 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+/* 현재 실행중인 스레드와 ready list의 첫 번째 스레드를 비교한다. 
+	더 높은 우선순위를 가진 스레드에게 CPU를 yield한다. */
+void 
+thread_preempt() {
+	struct thread *curr = thread_current();		// 현재 스레드
+	struct thread *t = list_entry(list_begin(&ready_list), struct thread, elem);	// ready list 첫 번째 스레드
+
+	if (curr->priority < t->priority)
+		thread_yield();
 }
