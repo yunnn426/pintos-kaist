@@ -32,6 +32,11 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+/* sema->waiters()*/
+bool compare_sema_priority(const struct list_elem *a,
+							const struct list_elem *b,
+							void *aux);
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -65,9 +70,9 @@ sema_down (struct semaphore *sema) {
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
-	while (sema->value == 0) {
-		list_push_back (&sema->waiters, &thread_current ()->elem);
-		thread_block ();
+	while (sema->value == 0) {		// 0일 동안, 즉 다른 스레드가 lock을 가지고 있는 동안
+		list_push_back (&sema->waiters, &thread_current ()->elem);	// init된 sema->waiter 안에 실제로 스레드가 포함된다.
+		thread_block ();			// 현재 스레드는 블락 상태이다.
 	}
 	sema->value--;
 	intr_set_level (old_level);
@@ -109,10 +114,16 @@ sema_up (struct semaphore *sema) {
 	ASSERT (sema != NULL);
 
 	old_level = intr_disable ();
-	if (!list_empty (&sema->waiters))
-		thread_unblock (list_entry (list_pop_front (&sema->waiters),
-					struct thread, elem));
-	sema->value++;
+	if (!list_empty (&sema->waiters)) {
+		/* cond의 waiter에 붙어 오는 sema의 경우, 
+			sema->waiters에는 항상 1개의 스레드만 존재한다.
+			그러나, cond를 사용하지 않는 경우 여러 스레드가 sema->waiters에 기다릴 수 있기 때문에 sort 해준다. */
+		list_sort(&sema->waiters, compare_priority, NULL);
+		thread_unblock (list_entry (list_pop_front (&sema->waiters),	
+					struct thread, elem));		// 새로운 스레드가 ready list에 추가된다.
+	}
+	sema->value++;							// 왜 먼저 업???
+	thread_preempt();						// 따라서, 선점 여부를 다시 확인해야 한다.
 	intr_set_level (old_level);
 }
 

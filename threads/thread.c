@@ -497,11 +497,6 @@ thread_set_priority (int new_priority) {
 	
 	list_sort(&ready_list, compare_priority, NULL);		// 다시 ready list를 정렬한다. 
 	thread_preempt();	// 선점 여부를 확인한다.
-	/* 현재 스레드의 새로운 우선순위와 ready list의 첫 요소 (가장 우선순위가 높은) 비교한다.
-		현재 스레드의 우선순위가 더 낮다면, CPU를 yield한다. */
-	// if (thread_current()->priority < list_entry(list_begin(&ready_list), struct thread, elem)) {
-	// 	thread_yield();
-	// }
 }
 
 /* Returns the current thread's priority. */
