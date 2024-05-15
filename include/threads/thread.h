@@ -145,4 +145,21 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
+/* functions added for 1) alarm clock */
+bool compare_tick(const struct list_elem *a,
+                  const struct list_elem *b,
+                  void *aux);
+void thread_sleep(int64_t ticks);
+void set_global_ticks();
+int64_t get_global_ticks();
+void thread_wakeup(int64_t nowtime);
+
+/* functions added for 2) priority */
+bool compare_priority(const struct list_elem *a,
+					const struct list_elem *b,
+					void *aux);
+/* ready list의 첫 번째 스레드와 현재 실행중인 스레드를 비교한다.
+	더 높은 우선순위의 스레드에게 yield한다. */
+void thread_preempt();
+
 #endif /* threads/thread.h */
