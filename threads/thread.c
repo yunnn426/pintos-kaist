@@ -493,8 +493,13 @@ thread_wakeup(int64_t nowtime) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;		// 새로운 우선순위 설정
-	
+	/* priority가 아예 바뀌었으므로 original priority를 갱신한다. */
+	thread_current ()->original_priority = new_priority;		// 새로운 우선순위 설정
+
+	/* 현재 스레드의 우선순위가 더 낮아진 경우,
+		다시 donations list를 확인하며 현재 스레드의 우선순위를 갱신한다. */
+	update_donation();
+
 	list_sort(&ready_list, compare_priority, NULL);		// 다시 ready list를 정렬한다. 
 	thread_preempt();	// 선점 여부를 확인한다.
 }
@@ -597,6 +602,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 
 	/* init local tick */
 	t->tick = 0;
+
+	/* init donations field */
+	lock_init(&t->wait_on_lock);
+	list_init(&t->donations);
+	t->original_priority = priority;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -782,7 +792,9 @@ allocate_tid (void) {
 /* 현재 실행중인 스레드와 ready list의 첫 번째 스레드를 비교한다. 
 	더 높은 우선순위를 가진 스레드에게 CPU를 yield한다. */
 void 
-thread_preempt() {
+thread_preempt(void) {
+	if (list_empty(&ready_list) || thread_current() == idle_thread)
+		return;
 	struct thread *curr = thread_current();		// 현재 스레드
 	struct thread *t = list_entry(list_begin(&ready_list), struct thread, elem);	// ready list 첫 번째 스레드
 
