@@ -97,6 +97,12 @@ struct thread {
 
 	int64_t tick;						/* local tick: 현재 시간 + sleep 시간 */
 
+	/* donate를 위한 field */
+	struct lock *wait_on_lock;			/* stores what lock the thread is waiting for. */
+	struct list donations;
+	struct list_elem d_elem;
+	int original_priority;					/* stores original priority for restoring. */
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
