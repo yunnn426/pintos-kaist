@@ -495,7 +495,8 @@ void
 thread_set_priority (int new_priority) {
 	/* priority가 아예 바뀌었으므로 original priority를 갱신한다. */
 	thread_current ()->original_priority = new_priority;		// 새로운 우선순위 설정
-
+	thread_current()->priority = new_priority;
+	
 	/* 현재 스레드의 우선순위가 더 낮아진 경우,
 		다시 donations list를 확인하며 현재 스레드의 우선순위를 갱신한다. */
 	update_donation();

@@ -245,7 +245,7 @@ lock_acquire (struct lock *lock) {
 void 
 donate() {
 	struct thread *t = thread_current();
-	struct thread *holder = t->wait_on_lock->holder;	// 현재 lock holder
+	struct thread *holder;	// 현재 lock holder
 
 	/* 최대 8개 스레드까지 대기할 수 있다. */
 	for (int i = 0; i < 8; i++) {
@@ -253,14 +253,13 @@ donate() {
 		if (t->wait_on_lock == NULL)	// wait_on_lock이 NULL일 수 있으니까 체크
 			return;
 
-		if (t == NULL || holder->priority > t->priority)
-			return;
-		
+		holder = t->wait_on_lock->holder;
+
 		if (holder->priority < t->priority) {
 			holder->priority = t->priority;
 		}
 
-		t = t->wait_on_lock->holder;
+		t = holder;
 	}
 }
 
@@ -269,6 +268,8 @@ donate() {
 void
 update_donation() {
 	struct thread *curr = thread_current();
+	/* 밑에 함수들이 return할 수도 있으니까 여기서 이전 priority 복구해주어야한다. */
+	curr->priority = curr->original_priority;
 
 	if (list_empty(&curr->donations))
 		return;
@@ -317,8 +318,10 @@ lock_release (struct lock *lock) {
 		1. donations list를 돌면서 해당 lock을 기다리고 있는 스레드를 remove 
 		2. 현재 스레드의 priority를 갱신한다. */
 	
+	struct thread *curr = thread_current();
 	struct list_elem *e;
-	for (e = list_begin(&lock->holder->donations); e != list_end(&lock->holder->donations);) {
+
+	for (e = list_begin(&curr->donations); e != list_end(&curr->donations);) {
 		struct thread *t = list_entry(e, struct thread, d_elem);
 		if (t->wait_on_lock == lock) {
 			e = list_remove(&t->d_elem);		// t->d_elem으로 바꿔보기
