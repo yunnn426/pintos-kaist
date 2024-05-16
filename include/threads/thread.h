@@ -96,6 +96,16 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
+	// donationlist
+	// donate elem
+	// original_priority -> 임시저장 및 갱신용
+	// wait_on_lock -> lock -> -> 생각할 거리를 주는군. -> 이것도 나중에 정리해서 
+	
+	struct list donation_list;
+	struct list_elem donation_elem;
+	int original_priority;
+	struct lock *wait_on_lock;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -149,5 +159,8 @@ void thread_wakeup(int64_t ticks);
 void thread_sleep(int64_t howLong);
 bool ticks_less(const struct list_elem *a_, const struct list_elem *b_,
             void *aux UNUSED);
-
+void preempt(void);
+bool cmp_thread_priority(const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED);
+void update_donate();
 #endif /* threads/thread.h */

@@ -94,7 +94,9 @@ timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	thread_sleep(start + ticks);		// 확인사항	
+	if (timer_elapsed(start) < ticks ) {
+		thread_sleep(start + ticks);		// 확인사항	
+	}
 }
 
 /* Suspends execution for approximately MS milliseconds. */
