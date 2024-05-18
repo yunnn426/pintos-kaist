@@ -197,6 +197,16 @@ lock_acquire (struct lock *lock) {
 
 	struct thread *cur = thread_current();
 
+	if (thread_mlfqs) {
+		if (lock->holder) {
+			cur->wait_on_lock = lock;
+		}
+		sema_down (&lock->semaphore); // mlfqs면 도네이트 안하고 바로 리턴해야함
+		lock->holder = cur;
+		lock->holder->wait_on_lock = NULL;
+		return; // mlfqs면 도네이트 안하고 바로 리턴해야함
+	}
+
 	if (lock->holder) {
 		cur->wait_on_lock = lock;
 		list_insert_ordered(&lock->holder->donation_list, &cur->donation_elem,cmp_priority_by_donation_elem,NULL);
@@ -241,6 +251,12 @@ lock_release (struct lock *lock) {
 
 	struct list_elem *e;
     struct thread *cur = thread_current ();
+
+  	if (thread_mlfqs) {
+		lock->holder = NULL;
+    	sema_up (&lock->semaphore);
+    	return;
+  	}
 
 	/* donation 리스트를 순회하며 */
     for (e = list_begin (&cur->donation_list); e != list_end (&cur->donation_list); e = list_next (e)){
