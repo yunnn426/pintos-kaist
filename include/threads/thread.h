@@ -101,7 +101,11 @@ struct thread {
 	struct lock *wait_on_lock;			/* stores what lock the thread is waiting for. */
 	struct list donations;
 	struct list_elem d_elem;
-	int original_priority;					/* stores original priority for restoring. */
+	int original_priority;				/* stores original priority for restoring. */
+
+	/* mlfqs */
+	int nice;							/* nicer thread gives up the cpu */
+	int recent_cpu;						/* cpu usage */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -164,8 +168,7 @@ void thread_wakeup(int64_t nowtime);
 bool compare_priority(const struct list_elem *a,
 					const struct list_elem *b,
 					void *aux);
-/* ready list의 첫 번째 스레드와 현재 실행중인 스레드를 비교한다.
-	더 높은 우선순위의 스레드에게 yield한다. */
 void thread_preempt();
 
+/* */
 #endif /* threads/thread.h */

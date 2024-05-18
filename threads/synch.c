@@ -232,8 +232,9 @@ lock_acquire (struct lock *lock) {
 		// curr->tmp_priority = curr->priority;
 		list_insert_ordered(&lock->holder->donations, &curr->d_elem, compare_priority_donations, NULL);
 
-		/* 8중 for문으로 모든 donation list 스레드의 priority 갱신*/ // ---------!!!
-		donate();
+		/* 8중 for문으로 모든 donation list 스레드의 priority 갱신*/
+		if (!thread_mlfqs)
+			donate();
 	}
 
 	sema_down (&lock->semaphore);
@@ -245,6 +246,7 @@ lock_acquire (struct lock *lock) {
 void 
 donate() {
 	struct thread *t = thread_current();
+	/* t->wait_on_lock이 NULL일 수 있으므로 선언만 해놓고 안에서 지정 */
 	struct thread *holder;	// 현재 lock holder
 
 	/* 최대 8개 스레드까지 대기할 수 있다. */
@@ -333,7 +335,8 @@ lock_release (struct lock *lock) {
 
 	/* multiple donation 상황에서 lock이 release됨으로써 
 		lock->holder의 priority를 갱신해주어야 하는 경우를 처리한다. */
-	update_donation();
+	if (!thread_mlfqs) 
+		update_donation();
 	
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
