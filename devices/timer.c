@@ -7,6 +7,7 @@
 #include "threads/io.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "threads/fixed_point.h";
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -126,24 +127,38 @@ timer_print_stats (void) {
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
-	ticks++;
+	ticks++; 
 	thread_tick ();
+
+
+	if (thread_mlfqs) {
+		// In every clock tick, increase the running thread’s recent_cpu by one.
+		incr_recent_cpu();
+		if (timer_ticks() % 4 == 0) {
+			// 모든 스레드에 대해 이거 재계산 하라함
+			// In every fourth tick, recompute the priority of all threads
+			// priority = PRI_MAX – (recent_cpu / 4) – (nice * 2)
+			calc_all_priority();
+		}
+		if (timer_ticks() % TIMER_FREQ == 0) {
+			//timer_ticks() % TIMER_FREQ == 0
+			// 여기 for문이 있어야할듯
+			calc_all_recent_cpu();
+			calc_load_avg();
+		}
+		// 1초 == 100틱 마다 
+		// In every second, update every thread’s recent_cpu
+		// 100틱마다 모든 스레드의 recent_cpu 를 아래 수식에 따라 계산합니다.
+		// recent_cpu = decay * recent_cpu + nice,
+		// decay = (2*load_average)/ (2*load_average + 1)
+		// load_avg = (59/60)*load_avg + (1/60)*ready_threads 
+	}
+
 
 	int64_t next = get_global_ticks();
 	if (next <= ticks) { 
 		thread_wakeup(ticks);
 	}
-	
-	/*
-		code to add : 
-		check sleep list and the global tick.
-		find any threads to wake up,
-		move them to the ready list if needed
-		update the global tick.
-	*/
-
-	// 1) 우선 sleep list 깨울 녀석이 있는지 확인해야 한다. (global tick과 스레드의 local tick 비교)
-	// 2) 깨울 수 있으면 깨워준다.
 
 }
 
@@ -203,3 +218,10 @@ real_time_sleep (int64_t num, int32_t denom) {
 		busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
 	}
 }
+
+// Priority = PRI_MAX – (recent_cpu/4) – (nice*2)
+// recent_cpu = (2*load_avg)/(2*load_avg+1)*recent_cpu + nice
+// load_avg = (59/60)*load_avg + (1/60)*ready_threads
+
+
+

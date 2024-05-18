@@ -1,5 +1,12 @@
 {
     "files.associations": {
-        "tests.h": "c"
+        "tests.h": "c",
+        "string.h": "c",
+        "fixed_point.h": "c",
+        "synch.h": "c",
+        "random.h": "c",
+        "stdio.h": "c",
+        "stdint.h": "c",
+        "interrupt.h": "c"
     }
 }
