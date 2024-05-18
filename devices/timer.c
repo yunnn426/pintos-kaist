@@ -127,10 +127,26 @@ timer_print_stats (void) {
 
 /* Timer interrupt handler. */
 static void
-timer_interrupt (struct intr_frame *args UNUSED) {//!! // 여기서 wakeup() // setter, getter
+timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
 
+	if (thread_mlfqs) {
+		/* 현재 스레드의 recent_cpu를 1 올려준다. */
+		thread_current()->recent_cpu++;
+
+		/* 4tick마다 모든 스레드의 우선순위를 다시 계산한다. */
+		if (ticks % 4 == 0)
+			calc_priority();
+
+		/* 매 초마다 recent_cpu를 갱신한다. */
+		if (ticks % TIMER_FREQ == 0) {
+			calc_load_avg();
+			calc_decay();
+			calc_recent_cpu();
+		}
+	}
+		
 	/* code to add:
 		sleep list와 global tick을 확인한 후
 		깨울 스레드가 있으면 ready list로 옮긴다.
@@ -198,3 +214,4 @@ real_time_sleep (int64_t num, int32_t denom) {
 		busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
 	}
 }
+

@@ -52,6 +52,9 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 
+static int load_avg;			/* # of average threads ready to run */
+static int decay;				/* recent_cpu를 변경시키기 위한 수 */
+
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
@@ -82,6 +85,12 @@ bool compare_priority(const struct list_elem *a,
 /* ready list의 첫 번째 스레드와 현재 실행중인 스레드를 비교한다.
 	더 높은 우선순위의 스레드에게 yield한다. */
 void thread_preempt();
+
+/* functions added for 3) mlfqs */
+void calc_priority();
+void calc_load_avg();
+void calc_decay();
+void calc_recent_cpu();
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -148,6 +157,10 @@ thread_start (void) {
 	struct semaphore idle_started;
 	sema_init (&idle_started, 0);
 	thread_create ("idle", PRI_MIN, idle, &idle_started);
+
+	/* init load_avg, decay */
+	load_avg = 0;
+	decay = 0;
 
 	/* Start preemptive thread scheduling. */
 	intr_enable ();
@@ -499,7 +512,8 @@ thread_set_priority (int new_priority) {
 	
 	/* 현재 스레드의 우선순위가 더 낮아진 경우,
 		다시 donations list를 확인하며 현재 스레드의 우선순위를 갱신한다. */
-	update_donation();
+	if (!thread_mlfqs)
+		update_donation();
 
 	list_sort(&ready_list, compare_priority, NULL);		// 다시 ready list를 정렬한다. 
 	thread_preempt();	// 선점 여부를 확인한다.
@@ -514,28 +528,25 @@ thread_get_priority (void) {
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice UNUSED) {
-	/* TODO: Your implementation goes here */
+	thread_current()->nice = nice;
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	return fixed_mul_int(load_avg, 100);
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) {
-	/* TODO: Your implementation goes here */
-	return 0;
+	return fixed_mul_int(thread_current()->recent_cpu, 100);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -608,6 +619,10 @@ init_thread (struct thread *t, const char *name, int priority) {
 	lock_init(&t->wait_on_lock);
 	list_init(&t->donations);
 	t->original_priority = priority;
+
+	/* init nice, recent cpu */
+	t->nice = 0;
+	t->recent_cpu = 0;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -801,4 +816,64 @@ thread_preempt(void) {
 
 	if (curr->priority < t->priority)
 		thread_yield();
+}
+
+/* ready list에 존재하는 스레드의 priority를 모두 갱신한다. */
+/* 4 tick마다 수행 */
+void 
+calc_priority() {
+	struct list_elem *e;
+	for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
+		struct thread *t = list_entry(list_begin(&ready_list), struct thread, elem);
+
+		int recent_cpu = t->recent_cpu;
+		int nice = t->nice;
+
+		/* 새로운 priority를 계산해 범위가 맞다면 갱신한다. */
+		/* priority = PRI_MAX - (recent_cpu / 4) - (nice * 2) */
+		int new_priority = PRI_MAX - (recent_cpu / 4) - (nice * 2);
+		if (PRI_MIN < new_priority && new_priority < PRI_MAX)
+			thread_set_priority(new_priority);	
+	}
+}
+
+/* 매 초마다 load_avg를 갱신한다. */
+void 
+calc_load_avg() {
+	/* ready threads = ready list의 크기 + 현재 실행중인 스레드 */
+	int ready_threads = list_size(&ready_list) + 1; 
+
+	/* load_avg 
+		= (59/60)*load_avg + (1/60)*ready_threads */
+
+	int a = fixed_mul((59/60), load_avg);
+	int b = fixed_mul_int((1/60), ready_threads);
+	load_avg = fixed_add(a, b);
+}
+
+/* 매 초마다 decay를 갱신한다. */
+void 
+calc_decay() {
+	/* decay = (2*load_average) / (2*load_average + 1) */
+
+	int a = fixed_mul_int(load_avg, 2);
+	int b = fixed_add_int(a, 1);
+	decay = fixed_add(a, b);
+}
+
+/* ready list에 존재하는 스레드의 recent_cpu를 모두 갱신한다. */
+/* decay, nice 사용 */
+void 
+calc_recent_cpu() {
+	/* recent_cpu = decay * recent_cpu + nice */
+
+	struct list_elem *e;
+	for (e = list_begin(&ready_list); e != list_end(&ready_list); e = list_next(e)) {
+		struct thread *t = list_entry(list_begin(&ready_list), struct thread, elem);
+
+		int recent_cpu = t->recent_cpu;
+		int nice = t->nice;
+
+		t->recent_cpu = fixed_add_int(fixed_mul_int(decay, recent_cpu), nice);
+	}
 }
