@@ -129,37 +129,20 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++; 
 	thread_tick ();
-
-
 	if (thread_mlfqs) {
-		// In every clock tick, increase the running thread’s recent_cpu by one.
-		incr_recent_cpu();
-		if (timer_ticks() % 4 == 0) {
-			// 모든 스레드에 대해 이거 재계산 하라함
-			// In every fourth tick, recompute the priority of all threads
-			// priority = PRI_MAX – (recent_cpu / 4) – (nice * 2)
+		incr_recent_cpu(); 	          // In every clock tick, increase the running thread’s recent_cpu by one.
+		if (timer_ticks() % 4 == 0) { // In every fourth tick, recompute the priority of all threads
 			calc_all_priority();
 		}
-		if (timer_ticks() % TIMER_FREQ == 0) {
-			//timer_ticks() % TIMER_FREQ == 0
-			// 여기 for문이 있어야할듯
-			calc_all_recent_cpu();
+		if (timer_ticks() % TIMER_FREQ == 0) {		
+			calc_all_recent_cpu();    // In every second, update every thread’s recent_cpu
 			calc_load_avg();
 		}
-		// 1초 == 100틱 마다 
-		// In every second, update every thread’s recent_cpu
-		// 100틱마다 모든 스레드의 recent_cpu 를 아래 수식에 따라 계산합니다.
-		// recent_cpu = decay * recent_cpu + nice,
-		// decay = (2*load_average)/ (2*load_average + 1)
-		// load_avg = (59/60)*load_avg + (1/60)*ready_threads 
 	}
-
-
 	int64_t next = get_global_ticks();
 	if (next <= ticks) { 
 		thread_wakeup(ticks);
 	}
-
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -218,10 +201,3 @@ real_time_sleep (int64_t num, int32_t denom) {
 		busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
 	}
 }
-
-// Priority = PRI_MAX – (recent_cpu/4) – (nice*2)
-// recent_cpu = (2*load_avg)/(2*load_avg+1)*recent_cpu + nice
-// load_avg = (59/60)*load_avg + (1/60)*ready_threads
-
-
-

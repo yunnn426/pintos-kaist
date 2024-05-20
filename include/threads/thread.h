@@ -99,12 +99,6 @@ struct thread {
 	int64_t local_ticks;
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
-
-	// donationlist
-	// donate elem
-	// original_priority -> 임시저장 및 갱신용
-	// wait_on_lock -> lock -> -> 생각할 거리를 주는군. -> 이것도 나중에 정리해서 
-	
 	struct list donation_list;
 	struct list_elem donation_elem;
 	int original_priority;
