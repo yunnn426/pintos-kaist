@@ -417,6 +417,7 @@ update_donation() {
 
 	int max_priority = 0;
 	cur->priority = cur->original_priority;
+	
 	if (!list_empty(&cur->donation_list)) {
 		list_sort(&cur->donation_list, cmp_priority_by_donation_elem, 0);
 		e = list_front(&cur->donation_list);

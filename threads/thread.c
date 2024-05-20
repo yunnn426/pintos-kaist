@@ -130,7 +130,7 @@ thread_init (void) {
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
-	list_push_back(&all_list, &(initial_thread->allelem)); // why?
+	list_push_back(&all_list, &(initial_thread->allelem));
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
 }
@@ -198,10 +198,9 @@ thread_sleep(int64_t howLong) {
 	ASSERT(curr != idle_thread);
 
 	curr->local_ticks = howLong;
-//	list_push_back(&sleep_list, &curr->elem);
 	list_insert_ordered(&sleep_list, &curr->elem, ticks_less ,NULL);
 	set_global_ticks(); 
-	thread_block();	// hread_block() 과 do_schedule 뭘 써야하지?
+	thread_block();
 
 	// 2) intr able 
 	intr_set_level(old_level);
@@ -224,7 +223,6 @@ thread_wakeup(int64_t ticks) { // OS ticks from timer!
 		if (cur->local_ticks > ticks) break;
 		e = list_remove(e);
 		thread_unblock(cur); // 이미 만들어진 함수에서 다 처리
-		if (!thread_mlfqs) preempt(); /* mlfqs 에서 비활성화 처리해줌. */
     }
 	set_global_ticks();
 }
@@ -283,7 +281,7 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
-	preempt();
+	if(!thread_mlfqs) preempt();
 	return tid;
 }
 
@@ -395,7 +393,6 @@ thread_set_priority (int new_priority) {
 	}
 	thread_current ()->original_priority = new_priority;
 	update_donation();
-	// list_sort(&ready_list,cmp_thread_priority,NULL);
 	preempt();
 }
 
@@ -412,6 +409,7 @@ thread_set_nice (int nice UNUSED) {
 	old_level = intr_disable(); 
 	thread_current ()->nice = nice;
 	calc_priority(thread_current ());
+	preempt();
 	intr_set_level(old_level);
 }
 
@@ -430,7 +428,7 @@ int
 thread_get_load_avg (void) {
 	enum intr_level old_level;
 	old_level = intr_disable();
-	int ret = fixed_to_int_trunc (fixed_mul_int (load_avg, 100)); // No round
+	int ret = fixed_to_int_round (fixed_mul_int (load_avg, 100)); 
 	intr_set_level(old_level);
   	return ret;
 }
@@ -440,7 +438,7 @@ int
 thread_get_recent_cpu (void) {
 	enum intr_level old_level;
 	old_level = intr_disable(); 
-	int ret = fixed_to_int_trunc (fixed_mul_int (thread_current()->recent_cpu, 100)); // No round
+	int ret = fixed_to_int_round (fixed_mul_int (thread_current()->recent_cpu, 100)); 
 	intr_set_level(old_level);
 	return ret;
 }
@@ -506,6 +504,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
+	if (thread_mlfqs) {
+		t->priority = PRI_DEFAULT;
+	}
 	t->magic = THREAD_MAGIC;
 
 	t->wait_on_lock = NULL;
@@ -740,8 +741,6 @@ preempt() {
 	if (cur == idle_thread) {
 		return;
 	}
-	// list_elem 타입의 '변수명' 이 elem 이므로.
-	// list_front vs list_begin ;
 	if (cur->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority) { 
 		thread_yield();
 	}
@@ -785,9 +784,10 @@ calc_load_avg() {
   	else
     	ready_threads = list_size (&ready_list) + 1;
 
-  	load_avg = fixed_add(fixed_mul (fixed_div (int_to_fixed (59), int_to_fixed (60)), load_avg), 
-               			 fixed_mul_int (fixed_div (int_to_fixed (1), int_to_fixed (60)), ready_threads));
+  	load_avg = fixed_add(fixed_mul (  ((59*F)/60) , load_avg), 
+               			 fixed_mul_int ( ((F)/60)  , ready_threads));
 }
+
 void
 calc_all_recent_cpu() {
 	// In every second, update every thread’s recent_cpu
