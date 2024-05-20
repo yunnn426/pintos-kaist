@@ -9,7 +9,11 @@ struct semaphore {
 	unsigned value;             /* Current value. */
 	struct list waiters;        /* List of waiting threads. */
 };
-
+bool cmp_thread_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux);
+bool cmp_priority_by_sema(const struct list_elem *a_, const struct list_elem *b_, void *aux);
+bool cmp_priority_by_donation_elem(const struct list_elem *a_, const struct list_elem *b_, void *aux);
+void donation();
+void update_donate();
 void sema_init (struct semaphore *, unsigned value);
 void sema_down (struct semaphore *);
 bool sema_try_down (struct semaphore *);
