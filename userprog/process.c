@@ -22,11 +22,15 @@
 #include "vm/vm.h"
 #endif
 
+/* (There is an unrelated limit of 128 bytes on command-line arguments that 
+the pintos utility can pass to the kernel.)*/
+#define MAX_ARGS 128
+
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
-
+static void argument_stack(char *argv[], int argc, struct intr_frame *if_);
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
@@ -176,9 +180,17 @@ process_exec (void *f_name) {
 	/* We first kill the current context */
 	process_cleanup ();
 
+	char *token, *save_ptr;
+    char *argv[123];
+    int argc = 0;
+	for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
+		argv[argc++] = token;
+	}
 	/* And then load the binary */
 	success = load (file_name, &_if);
 
+	argument_stack(&argv, argc,&_if);
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - _if.rsp, true);
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
 	if (!success)
@@ -204,6 +216,9 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	for(int i=0; i<100000000; i++) {
+
+	}
 	return -1;
 }
 
@@ -418,13 +433,11 @@ load (const char *file_name, struct intr_frame *if_) {
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
 
 	success = true;
-
 done:
 	/* We arrive here whether the load is successful or not. */
 	file_close (file);
 	return success;
 }
-
 
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
@@ -637,3 +650,51 @@ setup_stack (struct intr_frame *if_) {
 	return success;
 }
 #endif /* VM */
+
+static void
+argument_stack(char *argv[], int argc, struct intr_frame *if_) {
+	/* Tokenize the args! */
+	char *argv_addr[123];
+	size_t distance = 0;
+
+	// // USER_STACK;
+	// USER_STACK = 0x47480000 따라서 여기서부터 빼주면 되겠네
+	// Push the address of each string plus a null pointer sentinel, on the stack, in right-to-left order. 
+	// 위의 제약조건 때문에 i를 0부터 하지 않고, 끝에서부터 (argc-1) 부터 시작.
+	for(int i = argc-1; i >= 0; i--) {
+     	size_t len = strlen(argv[i]) + 1;   	 // Null 종단자 포함해야함. 따라서 +1
+     	distance += len;
+     	argv_addr[i] = (if_->rsp - distance);  		 //  addr 배열에 저장
+    	memcpy((if_->rsp - distance), argv[i], len);  // rsp에 매개변수들을 넣어줌.
+	}
+	/* uint8_t 타입은 워드 정렬과 관련된 용도로 일반적으로 사용되는 타입입니다. 
+	따라서 코드 가독성을 위해 uint8_t 타입을 사용하는 것이 좋습니다. */
+
+	/* Word-aligned accesses are faster than unaligned accesses, 
+	so for best performance round the stack pointer down to a multiple of 8 before the first push. */
+
+	/* | Name       | Data |  Type 	    | */
+	/* | word-align |   0  |  uint8_t[] | */ 
+	while ( ((if_->rsp - distance) % 8) != 0  ) { // 8배수 패딩
+		distance++;
+		memset(if_->rsp - distance, 0, sizeof(uint8_t)); // 그렇다면, 패딩 부분도 모두 0으로 만들어야 푸쉬가 제대로 되는건가..?
+	}
+
+	for (int i=argc; i>=0; i--) {
+		distance+=8;
+		if (i == argc) {
+			memset(if_->rsp - distance,0, sizeof( uintptr_t) );
+		}
+		else {
+			memcpy(if_->rsp - distance , &argv_addr[i], sizeof( uintptr_t));
+		}
+	}
+	/* 4 번 단계 */
+	if_->rsp -= distance;  
+	if_->R.rsi = if_->rsp;
+	if_->R.rdi = argc; // 그냥상수
+
+	/* 5번 단계 */
+	if_->rsp -= sizeof( uintptr_t);
+	memset(if_->rsp, 0, sizeof( uintptr_t));
+}
