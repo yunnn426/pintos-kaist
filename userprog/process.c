@@ -26,6 +26,7 @@ static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
+static void argument_stack(char *argv[], int argc, struct intr_frame *if_);
 
 /* General process initializer for initd and other process. */
 static void
@@ -161,7 +162,7 @@ error:
 	thread_exit ();
 }
 
-void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
+static void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
     char *argv_addr[128];
 
     /* 2. 스택 위에 문자열을 추가한다. */
@@ -183,7 +184,7 @@ void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
     /* 3. 주소의 끝을 표시하는 null sentinel 추가한다.
             매개변수의 주소를 차례대로 추가한다. */
     if_->rsp -= sizeof(char *);
-    *(char *)(if_->rsp) = 0;
+    *(char *)(if_->rsp) = '0';
 
     for (int i = argc - 1; i >= 0; i--) {
         if_->rsp -= sizeof(char *);
@@ -228,13 +229,12 @@ process_exec (void *f_name) {
         // printf("Argc : %d Argv: %s\n", argc, argv[argc]);
     }
 
-    argument_stack(argv, argc, &_if);
-    hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
-    // printf("%s\n", file_name);
-
     /* And then load the binary */
     success = load (file_name, &_if);
 
+    argument_stack(argv, argc, &_if);
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - _if.rsp, true);	
+	
     /* If load failed, quit. */
     palloc_free_page (file_name);
     if (!success)
