@@ -50,6 +50,9 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
+	char *save_ptr;
+    strtok_r(file_name, " ", &save_ptr);
+
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
@@ -158,35 +161,88 @@ error:
 	thread_exit ();
 }
 
+void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
+    char *argv_addr[128];
+
+    /* 2. 스택 위에 문자열을 추가한다. */
+    for (int i = argc - 1; i >= 0; i--) {
+        size_t len = sizeof(argv[i]) + 1;   // 끝에 \0 추가
+        if_->rsp -= len;
+        argv_addr[i] = if_->rsp;                 // argv[i]가 저장된 곳의 주소
+        memcpy(if_->rsp, argv[i], len);          // 스택에 문자열(ex. 'bar\0') 추가
+    }
+
+    /* 8바이트 정렬 -> 0 */
+    // if_->rsp -= (uintptr_t)if_->rsp % 8;
+    // *(uintptr_t *)(if_->rsp) = 0;
+    while (if_->rsp % 8 != 0) {
+        if_->rsp -= sizeof(uint64_t);
+        *(uint64_t *)(if_->rsp) = 0;
+    }
+
+    /* 3. 주소의 끝을 표시하는 null sentinel 추가한다.
+            매개변수의 주소를 차례대로 추가한다. */
+    if_->rsp -= sizeof(char *);
+    *(char *)(if_->rsp) = 0;
+
+    for (int i = argc - 1; i >= 0; i--) {
+        if_->rsp -= sizeof(char *);
+        memcpy(if_->rsp, argv_addr[i], sizeof(char *));
+    }
+
+    /* 4. %rsi -> &argv[0],
+            %rdi = argc로 설정 */
+    if_->R.rsi = if_->rsp;
+    if_->R.rdi = argc;
+
+    /* 5. 가짜 리턴 주소를 푸시한다. */
+    if_->rsp -= sizeof(uintptr_t);
+    *(uintptr_t *)(if_->rsp) = 0;
+}
+
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int
 process_exec (void *f_name) {
-	char *file_name = f_name;
-	bool success;
+    char *file_name = f_name;
+    bool success;
 
-	/* We cannot use the intr_frame in the thread structure.
-	 * This is because when current thread rescheduled,
-	 * it stores the execution information to the member. */
-	struct intr_frame _if;
-	_if.ds = _if.es = _if.ss = SEL_UDSEG;
-	_if.cs = SEL_UCSEG;
-	_if.eflags = FLAG_IF | FLAG_MBS;
+    /* We cannot use the intr_frame in the thread structure.
+     * This is because when current thread rescheduled,
+     * it stores the execution information to the member. */
+    struct intr_frame _if;
+    _if.ds = _if.es = _if.ss = SEL_UDSEG;
+    _if.cs = SEL_UCSEG;
+    _if.eflags = FLAG_IF | FLAG_MBS;
 
-	/* We first kill the current context */
-	process_cleanup ();
+    /* We first kill the current context */
+    process_cleanup ();
 
-	/* And then load the binary */
-	success = load (file_name, &_if);
+    char *token, *save_ptr;
+    char *argv[128];       // 단어를 담아놓는 곳
+    int argc = 0;
 
-	/* If load failed, quit. */
-	palloc_free_page (file_name);
-	if (!success)
-		return -1;
+    /* 1. 명령어를 공백 단위로 자른다. */
+    for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
+        argv[argc++] = token;
+        // printf("Argc : %d Argv: %s\n", argc, argv[argc]);
+    }
 
-	/* Start switched process. */
-	do_iret (&_if);
-	NOT_REACHED ();
+    argument_stack(argv, argc, &_if);
+    hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
+    // printf("%s\n", file_name);
+
+    /* And then load the binary */
+    success = load (file_name, &_if);
+
+    /* If load failed, quit. */
+    palloc_free_page (file_name);
+    if (!success)
+        return -1;
+
+    /* Start switched process. */
+    do_iret (&_if);
+    NOT_REACHED ();
 }
 
 
