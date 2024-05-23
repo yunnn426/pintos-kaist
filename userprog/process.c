@@ -167,7 +167,7 @@ static void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
 
     /* 2. 스택 위에 문자열을 추가한다. */
     for (int i = argc - 1; i >= 0; i--) {
-        size_t len = sizeof(argv[i]) + 1;   // 끝에 \0 추가
+        size_t len = strlen(argv[i]) + 1;   // 끝에 \0 추가		// sizeof 아님 strlen임 당연함
         if_->rsp -= len;
         argv_addr[i] = if_->rsp;                 // argv[i]가 저장된 곳의 주소
         memcpy(if_->rsp, argv[i], len);          // 스택에 문자열(ex. 'bar\0') 추가
@@ -177,18 +177,20 @@ static void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
     // if_->rsp -= (uintptr_t)if_->rsp % 8;
     // *(uintptr_t *)(if_->rsp) = 0;
     while (if_->rsp % 8 != 0) {
-        if_->rsp -= sizeof(uint64_t);
-        *(uint64_t *)(if_->rsp) = 0;
+        if_->rsp -= sizeof(uint8_t);
+        memset(if_->rsp, 0, sizeof(uint8_t));
+		// *(uintptr_t *)(if_->rsp) = 0;
     }
 
     /* 3. 주소의 끝을 표시하는 null sentinel 추가한다.
             매개변수의 주소를 차례대로 추가한다. */
     if_->rsp -= sizeof(char *);
-    *(char *)(if_->rsp) = '0';
+    memset(if_->rsp, 0, sizeof(char *));
+	// *(char *)(if_->rsp) = 0;
 
     for (int i = argc - 1; i >= 0; i--) {
         if_->rsp -= sizeof(char *);
-        memcpy(if_->rsp, argv_addr[i], sizeof(char *));
+        memcpy(if_->rsp, &argv_addr[i], sizeof(char *));	// argv_addr[i] 아님
     }
 
     /* 4. %rsi -> &argv[0],
@@ -198,7 +200,9 @@ static void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
 
     /* 5. 가짜 리턴 주소를 푸시한다. */
     if_->rsp -= sizeof(uintptr_t);
-    *(uintptr_t *)(if_->rsp) = 0;
+    // *(uintptr_t *)(if_->rsp) = 0;
+    memset(if_->rsp, 0, sizeof(uintptr_t));
+
 }
 
 /* Switch the current execution context to the f_name.
@@ -232,7 +236,7 @@ process_exec (void *f_name) {
     /* And then load the binary */
     success = load (file_name, &_if);
 
-    argument_stack(argv, argc, &_if);
+    argument_stack(&argv, argc, &_if);
 	hex_dump(_if.rsp, _if.rsp, USER_STACK - _if.rsp, true);	
 	
     /* If load failed, quit. */
@@ -260,6 +264,8 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	for(int i=0; i<100000000; i++) {
+    }
 	return -1;
 }
 
