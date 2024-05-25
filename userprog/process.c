@@ -31,6 +31,13 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 static void argument_stack(char *argv[], int argc, struct intr_frame *if_);
+
+void process_exit_file(void);
+int process_add_file(struct file *f);
+struct file *process_get_file(int fd);
+void process_close_file(int fd);
+void process_exit(void);
+
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
@@ -44,18 +51,35 @@ process_init (void) {
  * Notice that THIS SHOULD BE CALLED ONCE. */
 tid_t
 process_create_initd (const char *file_name) {
+	/* command line에서 받은 args를 사용하여 파일 처리를 시작한다.*/
+
+	/* 
+	pintos -v -k -T 60 -m 20   --fs-disk=10 -p tests/userprog/args-single:args-single -- -q   -f run 'args-single onearg'
+	run 뒷 부분부터 parsing이 되는 것입니다.
+	argv[0] = run
+	argv[1] = "args-single onearg"
+	arg[1]을 file_name으로 받은 상태입니다.
+	*/
+
 	char *fn_copy;
 	tid_t tid;
 
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
-	fn_copy = palloc_get_page (0);
+	fn_copy = palloc_get_page (0); // 페이지 할당 및 page에 fn (file name) 저장.
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
+	char *save_ptr, *token;
+	token = strtok_r(file_name, " ", &save_ptr);
+	
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	tid = thread_create (token, PRI_DEFAULT, initd, fn_copy);
+		/* pintos에서는 단일 스레드만 고려하기에 thread_create()로 새로운 스레드를 생성해주고 tid를 return해준다.
+		여기서, thread_create() 함수의 인자들을 눈여겨 봐야한다.
+		앞에 2개 : file_name을 이름으로 하고 PRI_DEFAULT를 우선순위 값으로 가지는 새로운 스레드가 생성되고 tid를 반환한다.
+		뒤에 2개 : 그리고 스레드는 fn_copy를 인자로 받는 initd라는 함수를 실행시킨다. */
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
@@ -181,7 +205,7 @@ process_exec (void *f_name) {
 	process_cleanup ();
 
 	char *token, *save_ptr;
-    char *argv[123];
+    char *argv[128];
     int argc = 0;
 	for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
 		argv[argc++] = token;
@@ -189,12 +213,15 @@ process_exec (void *f_name) {
 	/* And then load the binary */
 	success = load (file_name, &_if);
 
-	argument_stack(&argv, argc,&_if);
-	hex_dump(_if.rsp, _if.rsp, USER_STACK - _if.rsp, true);
 	/* If load failed, quit. */
-	palloc_free_page (file_name);
 	if (!success)
 		return -1;
+
+
+	argument_stack(&argv, argc,&_if);
+	//hex_dump(_if.rsp, _if.rsp, USER_STACK - _if.rsp, true);
+
+	palloc_free_page (file_name);
 
 	/* Start switched process. */
 	do_iret (&_if);
@@ -216,7 +243,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	for(int i=0; i<100000000; i++) {
+	for(int i=0; i< 500000000; i++) {
 
 	}
 	return -1;
@@ -230,6 +257,18 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
+	// for (int i=2; i<MAX_FILE_NUMBER; i++) {
+	// 	if (curr->fd_table[i] != NULL) {
+	// 		process_close_file(i);
+	// 	}
+	// }
+	// printf ("%s: exit(%d)\n", thread_name(),curr->exit_code);
+
+	for (int i = 2; i < MAX_FILE_NUMBER; i++) {
+        if (thread_current()->fd_table[i] != NULL) {
+            close(i); //syscall close
+        }
+    }
 
 	process_cleanup ();
 }
@@ -654,18 +693,17 @@ setup_stack (struct intr_frame *if_) {
 static void
 argument_stack(char *argv[], int argc, struct intr_frame *if_) {
 	/* Tokenize the args! */
-	char *argv_addr[123];
-	size_t distance = 0;
+	uintptr_t argv_addr[argc];
 
 	// // USER_STACK;
 	// USER_STACK = 0x47480000 따라서 여기서부터 빼주면 되겠네
 	// Push the address of each string plus a null pointer sentinel, on the stack, in right-to-left order. 
 	// 위의 제약조건 때문에 i를 0부터 하지 않고, 끝에서부터 (argc-1) 부터 시작.
 	for(int i = argc-1; i >= 0; i--) {
-     	size_t len = strlen(argv[i]) + 1;   	 // Null 종단자 포함해야함. 따라서 +1
-     	distance += len;
-     	argv_addr[i] = (if_->rsp - distance);  		 //  addr 배열에 저장
-    	memcpy((if_->rsp - distance), argv[i], len);  // rsp에 매개변수들을 넣어줌.
+     	size_t len = strlen(argv[i]) + 1;  // Null 종단자 포함해야함. 따라서 +1
+		if_->rsp -= len;
+		memcpy(if_->rsp, argv[i], len);
+		argv_addr[i] = if_->rsp;
 	}
 	/* uint8_t 타입은 워드 정렬과 관련된 용도로 일반적으로 사용되는 타입입니다. 
 	따라서 코드 가독성을 위해 uint8_t 타입을 사용하는 것이 좋습니다. */
@@ -675,26 +713,71 @@ argument_stack(char *argv[], int argc, struct intr_frame *if_) {
 
 	/* | Name       | Data |  Type 	    | */
 	/* | word-align |   0  |  uint8_t[] | */ 
-	while ( ((if_->rsp - distance) % 8) != 0  ) { // 8배수 패딩
-		distance++;
-		memset(if_->rsp - distance, 0, sizeof(uint8_t)); // 그렇다면, 패딩 부분도 모두 0으로 만들어야 푸쉬가 제대로 되는건가..?
+	while ( (if_->rsp % 8) != 0  ) { // 8배수 패딩
+		if_->rsp--;
+		memset(if_->rsp, 0, sizeof(uint8_t)); // 그렇다면, 패딩 부분도 모두 0으로 만들어야 푸쉬가 제대로 되는건가..?
 	}
 
 	for (int i=argc; i>=0; i--) {
-		distance+=8;
+		if_->rsp -= sizeof(uintptr_t);
 		if (i == argc) {
-			memset(if_->rsp - distance,0, sizeof( uintptr_t) );
+			memset(if_->rsp,0, sizeof( uintptr_t) );
 		}
 		else {
-			memcpy(if_->rsp - distance , &argv_addr[i], sizeof( uintptr_t));
+			memcpy(if_->rsp, &argv_addr[i], sizeof( uintptr_t));
 		}
 	}
 	/* 4 번 단계 */
-	if_->rsp -= distance;  
 	if_->R.rsi = if_->rsp;
-	if_->R.rdi = argc; // 그냥상수
+	if_->R.rdi = argc;
 
 	/* 5번 단계 */
 	if_->rsp -= sizeof( uintptr_t);
 	memset(if_->rsp, 0, sizeof( uintptr_t));
+}
+
+void 
+process_exit_file(void) {
+	struct thread *cur = thread_current();
+    for (int i = 2; i <= 128; i++) {
+		if (cur->fd_table[i] != NULL) {
+			process_close_file(i);
+		}
+    }
+}
+
+int 
+process_add_file(struct file *f) {
+
+	struct thread *cur = thread_current();
+ 	int tmp_fd;
+
+    for (tmp_fd = 2; tmp_fd <= 128; tmp_fd++) {
+		if (cur->fd_table[tmp_fd] == NULL) {
+			cur->fd_table[tmp_fd] = f;
+			cur->cur_fd = tmp_fd;
+			return cur->cur_fd;
+		}
+    }
+	return -1;
+}
+
+struct file 
+*process_get_file(int fd) {
+	if (fd < 2 || fd > 128)
+		return NULL;
+	return thread_current()->fd_table[fd];
+}
+
+void 
+process_close_file(int fd) {
+	if (fd < 2 || fd > 128 || fd == NULL)
+		return NULL;
+
+	struct thread *cur = thread_current();
+	struct file *open_file = process_get_file(fd);
+	if (open_file == NULL) return NULL;
+
+	cur->fd_table[fd] = NULL;
+	file_close(open_file);
 }
