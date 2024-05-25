@@ -269,13 +269,19 @@ thread_create (const char *name, int priority,
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
 	t->tf.rip = (uintptr_t) kernel_thread;
-	t->tf.R.rdi = (uint64_t) function;
-	t->tf.R.rsi = (uint64_t) aux;
+	t->tf.R.rdi = (uint64_t) function; // 쓰레드 생성할 때 넘겨줬던 함수의 주소가 여기 담기는구나
+	t->tf.R.rsi = (uint64_t) aux;      // 함수의 인자를 * 포인터로 주는게, 주소를 가르킴으로써 매개변수를 갖고오는거구나.
 	t->tf.ds = SEL_KDSEG;
 	t->tf.es = SEL_KDSEG;
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
+
+    t->fd_table = palloc_get_multiple(PAL_ZERO, 2);
+    if (t->fd_table == NULL) 
+        return TID_ERROR;
+	t->fd_table[0] = 0;
+	t->fd_table[1] = 1;
 
 	list_push_back(&all_list, &t->allelem);
 
@@ -509,10 +515,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	}
 	t->magic = THREAD_MAGIC;
 
+	/* 자식 리스트 초기화 */
+	
 	t->wait_on_lock = NULL;
 	list_init(&t->donation_list);
 	t->original_priority = priority;
-
 	t->nice = NICE_DEFAULT;
 	t->recent_cpu = RECENT_CPU_DEFAULT;
 }

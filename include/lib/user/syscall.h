@@ -1,13 +1,32 @@
 #ifndef __LIB_USER_SYSCALL_H
 #define __LIB_USER_SYSCALL_H
 
+#include <userprog/syscall.h>
+#include <stdbool.h>
+#include "lib/kernel/console.h"
 #include <stdbool.h>
 #include <debug.h>
 #include <stddef.h>
-
+#include "threads/synch.h"
 /* Process identifier. */
 typedef int pid_t;
 #define PID_ERROR ((pid_t) -1)
+
+// Implements
+void halt (void);
+void exit (int status);
+int fork (const char *thread_name);
+int exec (const char *cmd_line);
+int wait (int pid);
+bool create (const char *file, unsigned initial_size);
+bool remove (const char *file);
+int open (const char *file);
+int filesize (int fd);
+int read (int fd, void *buffer, unsigned size);
+int write (int fd, const void *buffer, unsigned size);
+void seek (int fd, unsigned position);
+unsigned tell (int fd);
+void close (int fd);
 
 /* Map region identifier. */
 typedef int off_t;
@@ -35,6 +54,7 @@ int write (int fd, const void *buffer, unsigned length);
 void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
+void syscall_init(void);
 
 int dup2(int oldfd, int newfd);
 

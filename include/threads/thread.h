@@ -6,10 +6,12 @@
 #include <stdint.h>
 #include "threads/interrupt.h"
 #include "threads/fixed_point.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
 
+#define USERPROG
 
 /* States in a thread's life cycle. */
 enum thread_status {
@@ -32,6 +34,7 @@ typedef int tid_t;
 #define RECENT_CPU_DEFAULT 0
 #define NICE_DEFAULT 0
 #define LOAD_AVG_DEFAULT 0
+#define MAX_FILE_NUMBER 128
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -107,6 +110,25 @@ struct thread {
 	int nice;
 	int recent_cpu;
 	struct list_elem allelem;
+
+	/* wait, fork and exec */
+	int parent_fd;
+	struct list child_list;
+	struct list_elem young_child;
+	struct list_elem older_child;
+
+	// /* 프로세스의 프로그램 메모리 적재 유무 */
+
+	int is_dead;
+
+	struct semaphore *exit_sema;
+	struct semaphore *load_sema;
+
+	int **fd_table;
+    int cur_fd;
+
+	int exit_code;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
