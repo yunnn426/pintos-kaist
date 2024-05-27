@@ -125,12 +125,9 @@ syscall_handler (struct intr_frame *f UNUSED) {
 }
 
 void is_valid_addr(void *addr) {
-	if (addr == NULL)
+	if (addr == NULL || !is_user_vaddr(addr) || pml4_get_page(thread_current()->pml4, addr) == NULL) {
 		exit(-1);
-	if (!is_user_vaddr(addr))
-		exit(-1);
-	if (pml4_get_page(thread_current()->pml4, addr) == NULL)
-		exit(-1);
+	}
 }
 
 void halt (void) {
@@ -176,7 +173,7 @@ exec(const char *cmd_line) {
 		exit(-1); 
 	}
 	strlcpy (fn_copy, cmd_line, PGSIZE);
-	if (process_exec(fn_copy) == -1) {
+	if (process_exec(fn_copy) == -1) { 
 		// printf("process_exec failed for: %s\n", cmd_line);
 		exit(-1);
 	}
@@ -295,7 +292,6 @@ int write (int fd, const void *buffer, unsigned size) {
 }
 
 int fork(const char *thread_name, struct intr_frame *f) {
-	printf("can you go to fork\n");
 	is_valid_addr(thread_name);
 	return process_fork(thread_name, f);
 }

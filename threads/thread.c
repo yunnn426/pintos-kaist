@@ -530,7 +530,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	}
 	t->magic = THREAD_MAGIC;
 
-	sema_init(&t->exit_sema, 0);
+	// sema_init(&t->exit_sema, 0);
 	sema_init(&t->fork_sema, 0);
 	sema_init(&t->wait_sema, 0);
 

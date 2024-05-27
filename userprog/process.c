@@ -108,18 +108,17 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	struct thread *cur = thread_current();
 	memcpy(&cur->copied_if, if_, sizeof(struct intr_frame));
 
-	// int로 하니 에러남..
 	tid_t tid = thread_create (name,
 			PRI_DEFAULT, __do_fork, cur);
 	if (tid == TID_ERROR) // Error handling
 		return TID_ERROR;
-
+ 
 	struct thread *child = get_child_process(tid);
+	sema_down(&child->fork_sema);
 
 	if (child->exit_code == -1) {
 		return TID_ERROR;
 	}
-	sema_down(&child->fork_sema); // 여기서 무한대기
 	return tid;
 }
 
@@ -214,7 +213,7 @@ __do_fork (void *aux) {
         struct file *file = parent->fd_table[i];
         if (file == NULL)
             continue;
-        if (file > 2)
+        if ( file > 2) // file, not i 
             file = file_duplicate(file);
         current->fd_table[i] = file;
     }
@@ -228,7 +227,7 @@ __do_fork (void *aux) {
 error:
 	current->exit_code = TID_ERROR;
 	sema_up(&current->fork_sema);
-	thread_exit();
+	exit(TID_ERROR); // thread_exit 대신 exit
 }
 
 /* Switch the current execution context to the f_name.
@@ -257,7 +256,7 @@ process_exec (void *f_name) {
 	}
 	/* And then load the binary */
 	success = load (file_name, &_if);
-	// sema_down(&cur->exit_sema);
+	
 	/* If load failed, quit. */
 	if (!success)
 		//palloc_free_page(file_name); //이거하면 대체 왜 에러가남??
@@ -303,7 +302,6 @@ process_wait (tid_t child_tid UNUSED) {
 
 	list_remove(&child->child_elem);
 
-	sema_up(&child->exit_sema);
 	int ret = child->exit_code;
 	return ret;
 
@@ -323,9 +321,8 @@ process_exit (void) {
     }
 	palloc_free_page(curr->fd_table);
 
-	// file_close(curr->file_holding); 일단 주석해제.. 에러가 계속남..
+	file_close(curr->file_holding); //일단 주석해제.. 에러가 계속남..
 	sema_up(&curr->wait_sema);
-	sema_down(&curr->exit_sema);
 	process_cleanup ();
 }
 
@@ -811,7 +808,7 @@ process_add_file(struct file *f) {
 	struct thread *cur = thread_current();
  	int tmp_fd;
 
-    for (tmp_fd = 2; tmp_fd <= 128; tmp_fd++) {
+    for (tmp_fd = 2; tmp_fd < 128; tmp_fd++) {
 		if (cur->fd_table[tmp_fd] == NULL) {
 			cur->fd_table[tmp_fd] = f;
 			cur->cur_fd = tmp_fd;
@@ -823,14 +820,14 @@ process_add_file(struct file *f) {
 
 struct file 
 *process_get_file(int fd) {
-	if (fd < 2 || fd > 128)
+	if (fd < 2 || fd > 127)
 		return NULL;
 	return thread_current()->fd_table[fd];
 }
 
 void 
 process_close_file(int fd) {
-	if (fd < 2 || fd > 128 || fd == NULL)
+	if (fd < 2 || fd > 127 || fd == NULL)
 		return NULL;
 
 	struct thread *cur = thread_current();

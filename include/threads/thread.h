@@ -115,14 +115,11 @@ struct thread {
 	int parent_fd;
 	struct list child_list;
 	struct list_elem child_elem;
-	struct list_elem young_child;
-	struct list_elem older_child;
 
 	struct file *file_holding;
 	// /* 프로세스의 프로그램 메모리 적재 유무 */
 	int is_dead;
 
-	struct semaphore exit_sema;
 	struct semaphore fork_sema;
 	struct semaphore wait_sema;
 
