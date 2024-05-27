@@ -26,7 +26,14 @@ static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
+
+/* argument passing */
 static void argument_stack(char *argv[], int argc, struct intr_frame *if_);
+
+/* file descriptor table */
+int process_add_file (struct file *f);
+struct file *process_get_file(int fd);
+void process_close_file(int fd);
 
 /* General process initializer for initd and other process. */
 static void
@@ -167,42 +174,44 @@ static void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
 
     /* 2. 스택 위에 문자열을 추가한다. */
     for (int i = argc - 1; i >= 0; i--) {
-        size_t len = strlen(argv[i]) + 1;   // 끝에 \0 추가		// sizeof 아님 strlen임 당연함
+        size_t len = strlen(argv[i]) + 1;					// sizeof 아님 strlen임 당연함
         if_->rsp -= len;
-        argv_addr[i] = if_->rsp;                 // argv[i]가 저장된 곳의 주소
-        memcpy(if_->rsp, argv[i], len);          // 스택에 문자열(ex. 'bar\0') 추가
+        argv_addr[i] = if_->rsp;                 			// argv[i]가 저장된 곳의 주소
+        memcpy(if_->rsp, argv[i], len);          			// 스택에 문자열(ex. 'bar\0') 추가
     }
+	// argv_addr[argc] = 0;									// null sentinel 추가 미리 해주기
 
     /* 8바이트 정렬 -> 0 */
-    // if_->rsp -= (uintptr_t)if_->rsp % 8;
-    // *(uintptr_t *)(if_->rsp) = 0;
     while (if_->rsp % 8 != 0) {
-        if_->rsp -= sizeof(uint8_t);
+        if_->rsp -= sizeof(uint8_t);						// sizeof(uint8_t) == 1byte
         memset(if_->rsp, 0, sizeof(uint8_t));
 		// *(uintptr_t *)(if_->rsp) = 0;
     }
 
-    /* 3. 주소의 끝을 표시하는 null sentinel 추가한다.
+    /* 3. 주소의 끝을 표시하는 null sentinel 추가한다. -> 채윤언니 파쿠리해옴 필요없음
             매개변수의 주소를 차례대로 추가한다. */
     if_->rsp -= sizeof(char *);
-    memset(if_->rsp, 0, sizeof(char *));
-	// *(char *)(if_->rsp) = 0;
+    memset(if_->rsp, 0, sizeof(char *));					// memset을 사용하자
+	// *(char *)(if_->rsp) = 0;								// -> 이렇게 하면 에러
 
-    for (int i = argc - 1; i >= 0; i--) {
+	/* argc - 1이면 중간에 null sentinel 0 추가해준 것 */
+    for (int i = argc - 1; i >= 0; i--) {						// argc-1 안해줌 이미 넣어줬기 때문
         if_->rsp -= sizeof(char *);
-        memcpy(if_->rsp, &argv_addr[i], sizeof(char *));	// argv_addr[i] 아님
+		/* memcpy는 두 번째 인자로 주소를 받는다.
+			따라서 주소값이 들어있는 주소를 전달해주어야 한다. 
+				ex. argv_addr[i] -> X */
+        memcpy(if_->rsp, &argv_addr[i], sizeof(char *));
     }
 
     /* 4. %rsi -> &argv[0],
             %rdi = argc로 설정 */
-    if_->R.rsi = if_->rsp;
+    if_->R.rsi = if_->rsp;		// argv_addr[0]으로 하니까 안된다..
     if_->R.rdi = argc;
 
     /* 5. 가짜 리턴 주소를 푸시한다. */
     if_->rsp -= sizeof(uintptr_t);
-    // *(uintptr_t *)(if_->rsp) = 0;
+    // *(uintptr_t *)(if_->rsp) = 0;						// -> 이렇게 하면 에러
     memset(if_->rsp, 0, sizeof(uintptr_t));
-
 }
 
 /* Switch the current execution context to the f_name.
@@ -230,14 +239,15 @@ process_exec (void *f_name) {
     /* 1. 명령어를 공백 단위로 자른다. */
     for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
         argv[argc++] = token;
-        // printf("Argc : %d Argv: %s\n", argc, argv[argc]);
     }
-
+ 
     /* And then load the binary */
     success = load (file_name, &_if);
 
+	/* [1] args passing */
     argument_stack(&argv, argc, &_if);
-	hex_dump(_if.rsp, _if.rsp, USER_STACK - _if.rsp, true);	
+	
+	// hex_dump(_if.rsp, _if.rsp, USER_STACK - _if.rsp, true);	
 	
     /* If load failed, quit. */
     palloc_free_page (file_name);
@@ -247,6 +257,44 @@ process_exec (void *f_name) {
     /* Start switched process. */
     do_iret (&_if);
     NOT_REACHED ();
+}
+
+/* 현재 스레드의 FDT를 확인하여 
+	비어있는 fd 식별자를 할당한다. */
+int 
+process_add_file (struct file *f) {
+	struct thread *curr = thread_current();
+
+	/* 현재 스레드의 fdt를 순회하며
+		비어있는 fd 값을 찾는다. */
+	int fd = 0;
+	for (int i = MIN_FD; i < MAX_FD; i++) {
+		if (curr->fdt[i] != NULL)
+			continue;
+		
+		/* 비어있는 fd에 새로운 파일을 할당한다. */
+		fd = i;
+		curr->fdt[i] = f;
+	}
+
+	return fd;
+}
+
+/* fd에 해당하는 파일 객체를 반환한다. */
+struct 
+file *process_get_file(int fd) {
+	struct thread *curr = thread_current();
+
+	return curr->fdt[fd];
+}
+
+/* fd에 해당하는 파일을 닫는다. 
+	즉, file descriptor table에서 
+	fd에 해당하는 엔트리를 초기화한다. */
+void 
+process_close_file(int fd) {
+	struct thread *curr = thread_current();
+	curr->fdt[fd] = NULL;
 }
 
 
@@ -264,8 +312,9 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	for(int i=0; i<100000000; i++) {
+	for(int i = 0; i < 120000000; i++) {
     }
+	
 	return -1;
 }
 
@@ -277,6 +326,8 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
+
+	printf("%s: exit(%d)\n", curr->name, curr->exit_status);
 
 	process_cleanup ();
 }

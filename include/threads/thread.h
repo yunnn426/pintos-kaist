@@ -32,6 +32,11 @@ typedef int tid_t;
 #define RECENT_CPU_DEFAULT 0
 #define NICE_DEFAULT 0
 #define LOAD_AVG_DEFAULT 0
+
+/* for file directory table. */
+#define MIN_FD 2
+#define MAX_FD 130
+
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -107,6 +112,10 @@ struct thread {
 	int nice;
 	int recent_cpu;
 	struct list_elem allelem;
+
+	int exit_status;
+	struct file *fdt[MAX_FD];				/* file descriptor table, 2 + 128 */
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
