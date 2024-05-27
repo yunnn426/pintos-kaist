@@ -314,7 +314,7 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       implementing the process_wait. */
 	for(int i = 0; i < 120000000; i++) {
     }
-	
+
 	return -1;
 }
 
@@ -327,9 +327,9 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
-	printf("%s: exit(%d)\n", curr->name, curr->exit_status);
-
 	process_cleanup ();
+
+	// printf("%s: exit(%d)\n", curr->name, curr->exit_status);
 }
 
 /* Free the current process's resources. */

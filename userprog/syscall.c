@@ -122,9 +122,9 @@ halt() {
 /* 프로세스명과 상태를 출력하고 종료한다. */
 void 
 exit(int status) {
-	// struct thread *t = thread_current();
-	// printf("%s: exit(%d)\n", t->name, status);
 
+	struct thread *t = thread_current();
+	printf("%s: exit(%d)\n", t->name, status);
 	thread_exit();
 }
 
