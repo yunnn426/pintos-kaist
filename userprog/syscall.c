@@ -41,6 +41,10 @@ syscall_init (void) {
 	 * mode stack. Therefore, we masked the FLAG_FL. */
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
+
+	/* init global lock
+		for file descriptor */
+	// lock_init(&filesys_lock);
 }
 
 /* The main system call interface */
@@ -50,12 +54,13 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	// printf ("system call!\n");
 	
 	/* syscall number */
-	uint64_t sys_no = f->R.rax;
+	uint64_t syscall_number = f->R.rax;
+	// printf("syscall number: %d\n", syscall_number);
 
 	/* argument가 레지스터에 저장되는 순서: 
 		%rdi, %rsi, %rdx, %r10, %r8, and %r9 */
 
-	switch (sys_no)
+	switch (syscall_number)
 	{
 	case SYS_HALT:
 		/* code */
@@ -78,8 +83,8 @@ syscall_handler (struct intr_frame *f UNUSED) {
 
 	case SYS_CREATE:
 	{
-		char *file = f->R.rdi;
-		unsigned initial_size = f->R.rsi;
+		const char *file = (const char *)f->R.rdi;
+		unsigned initial_size = (unsigned)f->R.rsi;
 		f->R.rax = create(file, initial_size);
 		break;
 	}
@@ -144,7 +149,12 @@ exec (const char *cmd_line) {
 bool
 create (const char *file, unsigned initial_size) {
 	check_address(file);
+	if (initial_size < 0) 
+		return false;
+		
+	// printf("Creating file: %s, initial_size: %u\n", file, initial_size);
 	bool result = filesys_create(file, initial_size);
+	// printf("Create success: %d\n", result);
 
 	return result;
 }
@@ -161,13 +171,16 @@ remove (const char *file) {
 }
 
 /* 유저 영역을 벗어난 경우 프로세스를 종료한다. */
+// #define USERPROG
 void 
 check_address(void *addr) {
-	/* user virtual memory가 매핑이 되었는지 확인 */
-	if (pml4_get_page == NULL)
-		exit(FAIL);
+	struct thread *t = thread_current();
+
 	/* 주소가 NULL이면 exit */
 	if (addr == NULL)
+		exit(FAIL);
+	/* user virtual memory가 매핑이 되었는지 확인 */
+	if (pml4_get_page(t->pml4, addr) == NULL)
 		exit(FAIL);
 	/* 커널 영역을 접근하려 하면 exit */
 	if (is_kernel_vaddr(addr))

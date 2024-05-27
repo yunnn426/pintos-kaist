@@ -312,7 +312,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	for(int i = 0; i < 120000000; i++) {
+	for(int i = 0; i < 1300000000 / 2; i++) {
     }
 
 	return -1;
@@ -327,9 +327,9 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
-	process_cleanup ();
-
 	// printf("%s: exit(%d)\n", curr->name, curr->exit_status);
+	
+	process_cleanup ();
 }
 
 /* Free the current process's resources. */
