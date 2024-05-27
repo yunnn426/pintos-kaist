@@ -115,6 +115,7 @@ struct thread {
 
 	int exit_status;
 	struct file *fdt[MAX_FD];				/* file descriptor table, 2 + 128 */
+	int lastfd;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

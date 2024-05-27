@@ -277,6 +277,10 @@ thread_create (const char *name, int priority,
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
 
+	for (int i = MIN_FD; i < MAX_FD; i++) {
+		t->fdt[i] = NULL;
+	}
+
 	list_push_back(&all_list, &t->allelem);
 
 	/* Add to run queue. */

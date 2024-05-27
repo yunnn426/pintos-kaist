@@ -7,9 +7,13 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "devices/input.h"
+#include "userprog/process.h"
 
-// #include <process.h>
-// #include <filesys.h>
+#include <lib/kernel/console.h>
+
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -29,6 +33,8 @@ void syscall_handler (struct intr_frame *);
 
 /* my macro */
 #define FAIL -1 
+#define STDIN 0
+#define STDOUT 1
 
 void
 syscall_init (void) {
@@ -103,12 +109,50 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		break;
 	}
 
+	case SYS_FILESIZE:
+	{
+		int fd = f->R.rdi;
+		f->R.rax = filesize(fd);
+		break;
+	}
+
+	case SYS_READ:
+	{
+		int fd = f->R.rdi;
+		const void *buffer = f->R.rsi;
+		unsigned size = f->R.rdx;
+		f->R.rax = read(fd, buffer, size);
+		break;
+	}
+
 	case SYS_WRITE:
 	{
 		int fd = f->R.rdi;
 		void *buffer = f->R.rsi;
 		unsigned size = f->R.rdx;
 		f->R.rax = write(fd, buffer, size);
+		break;
+	}
+
+	case SYS_SEEK:
+	{
+		int fd = f->R.rdi;
+		unsigned position = f->R.rsi;
+		seek(fd, position);
+		break;
+	}
+
+	case SYS_TELL:
+	{
+		int fd = f->R.rdi;
+		f->R.rax = tell(fd);
+		break;
+	}
+
+	case SYS_CLOSE:
+	{
+		int fd = f->R.rdi;
+		close(fd);
 		break;
 	}
 
@@ -120,14 +164,13 @@ syscall_handler (struct intr_frame *f UNUSED) {
 }
 
 void
-halt() {
+halt(void) {
 	power_off();
 }
 
 /* 프로세스명과 상태를 출력하고 종료한다. */
 void 
 exit(int status) {
-
 	struct thread *t = thread_current();
 	printf("%s: exit(%d)\n", t->name, status);
 	thread_exit();
@@ -171,7 +214,6 @@ remove (const char *file) {
 }
 
 /* 유저 영역을 벗어난 경우 프로세스를 종료한다. */
-// #define USERPROG
 void 
 check_address(void *addr) {
 	struct thread *t = thread_current();
@@ -193,7 +235,11 @@ int
 open (const char *file) {
 	check_address(file);
 	struct file *f = filesys_open(file);
+	if (f == NULL) 
+		return -1;
 	int fd = process_add_file(f);
+	if (fd == -1)
+		exit(-1);
 
 	return fd;
 }
@@ -201,14 +247,48 @@ open (const char *file) {
 /* fd 식별자를 갖는 파일의 크기를 바이트 단위로 반환한다.*/
 int 
 filesize (int fd) {
+	struct thread *curr = thread_current();
+	struct file *f = curr->fdt[fd];
+	int size = file_length(f);
 
+	return size;
+}
+
+/* fd로 열려있는 파일에 대해
+	fd가 STDIN(0)인 경우 키보드에서 읽고, 
+	그 외의 경우 파일의 내용을 읽어서 buffer에 쓴다. */
+int 
+read (int fd, void *buffer, unsigned size) {
+	if (fd < 0 || fd > MAX_FD || fd == NULL)
+		exit(-1);
+	else if (fd == 1)
+		return;
+
+	check_address(buffer);
+
+	/* reads from keyboard. */
+	if (fd == 0) {
+		return input_getc();
+	} 
+
+	/* reads fd to buffer. */
+	else {
+		struct thread *curr = thread_current();
+		struct file *f = curr->fdt[fd];
+	
+		return file_read(f, buffer, size);
+	}
 }
 
 /* 열려있는 fd 식별자의 파일에 대해
-	size 바이트만큼 buffer의 내용을 쓴다.
-	 */
+	size 바이트만큼 buffer의 내용을 쓴다. */
 int 
 write (int fd, const void *buffer, unsigned size) {
+	if (fd < 0 || fd > MAX_FD || fd == NULL)
+		exit(-1);
+	else if (fd == 0)
+		return;
+
 	check_address(buffer);
 
 	struct thread *curr = thread_current();
@@ -216,7 +296,7 @@ write (int fd, const void *buffer, unsigned size) {
 
 	/* stdout */
 	if (fd == 1) {
-		putbuf(buffer, size);
+		putbuf(buffer, size);		// in console.c
 
 		return size;
 	}
@@ -226,4 +306,44 @@ write (int fd, const void *buffer, unsigned size) {
 
 		return bytes_written;
 	}
+}
+
+/* fd로 열린 파일의 
+	pos를 position으로 변경한다. */
+void 
+seek (int fd, unsigned position) {
+	if (fd < 0 || fd > MAX_FD || fd == NULL)
+		exit(-1);
+	if (position < 0)
+		return;
+
+	struct thread *curr = thread_current();
+	struct file *f = curr->fdt[fd];
+	file_seek(f, position);
+}
+
+/* fd로 열린 파일에서
+	다음으로 읽히거나 써지는 곳의 pos를 리턴한다. */
+unsigned 
+tell (int fd) {
+	if (fd < 0 || fd > MAX_FD || fd == NULL)
+		exit(-1);
+
+	struct thread *curr = thread_current();
+	struct file *f = curr->fdt[fd];
+	
+	return file_tell(f);
+}
+
+/* fd로 열린 파일을 닫고
+	File Descriptor table의 해당 엔트리를 초기화한다. */
+void 
+close (int fd) {
+	if (fd < 2 || fd >= MAX_FD || fd == NULL)
+		exit(-1);
+	struct thread *curr = thread_current();
+	struct file *f = curr->fdt[fd];
+
+	curr->fdt[fd] = NULL;		
+	file_close(f);				
 }

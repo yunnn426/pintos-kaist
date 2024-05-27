@@ -1,3 +1,5 @@
+// process.c
+
 #include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
@@ -267,16 +269,15 @@ process_add_file (struct file *f) {
 
 	/* 현재 스레드의 fdt를 순회하며
 		비어있는 fd 값을 찾는다. */
-	int fd = 0;
-	for (int i = MIN_FD; i < MAX_FD; i++) {
+	int fd = -1;
+	for (int i = 2; i < 130; i++) {
 		if (curr->fdt[i] != NULL)
 			continue;
-		
 		/* 비어있는 fd에 새로운 파일을 할당한다. */
 		fd = i;
 		curr->fdt[i] = f;
+		break;
 	}
-
 	return fd;
 }
 
@@ -312,8 +313,7 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	for(int i = 0; i < 1300000000 / 2; i++) {
-    }
+	for (int i = 0; i < 1200000000; i++) {}
 
 	return -1;
 }
@@ -326,8 +326,6 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-
-	// printf("%s: exit(%d)\n", curr->name, curr->exit_status);
 	
 	process_cleanup ();
 }
