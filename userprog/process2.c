@@ -107,19 +107,23 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* intr frame 복사 */
 	struct thread *cur = thread_current();
 	memcpy(&cur->copied_if, if_, sizeof(struct intr_frame));
-
+	printf("1\n");
 	// int로 하니 에러남..
 	tid_t tid = thread_create (name,
 			PRI_DEFAULT, __do_fork, cur);
 	if (tid == TID_ERROR) // Error handling
 		return TID_ERROR;
+	printf("3\n");
 
 	struct thread *child = get_child_process(tid);
+	printf("4\n");
 
 	if (child->exit_code == -1) {
 		return TID_ERROR;
 	}
+	printf("셈따옴?>>>\n");
 	sema_down(&child->fork_sema); // 여기서 무한대기
+	printf("셈따?>>>\n");
 	return tid;
 }
 
@@ -179,20 +183,26 @@ __do_fork (void *aux) {
 	struct thread *current = thread_current ();
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	struct intr_frame *parent_if;
+	printf("2\n");
 
 	parent_if = &parent->copied_if; // parent 자체가 fork를 실행한 쓰레드, 즉 복사본을 위에서 fork 하기 전에 저장함.
 	bool succ = true;
+	printf("dofork4\n");
+
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
 	if_.R.rax = 0;
+	printf("dofork6\n");
 
 	/* 2. Duplicate PT */
 	current->pml4 = pml4_create();
 	if (current->pml4 == NULL) {
 		goto error;
 	}
+	printf("dofork7\n");
 
 	process_activate (current);
+	printf("dofork8??\n");
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
@@ -200,9 +210,11 @@ __do_fork (void *aux) {
 #else
 
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent)) {
+		printf("dofork8\n");
 		goto error;
 	}
 #endif
+	printf("dofork10\n");
 
 	/* TODO: Your code goes here.
 	 * TODO: Hint) To duplicate the file object, use `file_duplicate`
@@ -219,6 +231,7 @@ __do_fork (void *aux) {
         current->fd_table[i] = file;
     }
 	current->cur_fd = parent->cur_fd;
+	printf("dofork12\n");
 	sema_up(&current->fork_sema);
 	process_init ();
 
@@ -293,17 +306,20 @@ process_wait (tid_t child_tid UNUSED) {
 	struct thread* child = get_child_process(child_tid);
 	/* 예외 처리 발생시-1 리턴*/
 	if (child == NULL) {
+		printf(" 나 널이야");
 		return -1;
 	}
 	/* 자식프로세스가 종료될 때까지 부모 프로세스 대기(세마포어 이용) */
 	// for(int i=0; i< 1000000000; i++) {
 
 	// }
+	printf("wait에서 잠드나요 ㅜㅜ\n");
 	sema_down(&child->wait_sema);
 
 	list_remove(&child->child_elem);
 
-	sema_up(&child->exit_sema);
+	// sema_up(&child->exit_sema);
+	printf("절대안옴 ㅜㅜ\n");
 	int ret = child->exit_code;
 	return ret;
 
@@ -321,12 +337,13 @@ process_exit (void) {
 	for (int i = 2; i < MAX_FILE_NUMBER; i++) {
         close(i); //syscall close
     }
-	palloc_free_page(curr->fd_table);
+	// palloc_free_page(curr->fd_table);
+	process_cleanup ();
 
+	printf("그렇다면 범인은 여기다 \n");
 	// file_close(curr->file_holding); 일단 주석해제.. 에러가 계속남..
 	sema_up(&curr->wait_sema);
-	sema_down(&curr->exit_sema);
-	process_cleanup ();
+	// sema_down(&curr->exit_sema);
 }
 
 /* Free the current process's resources. */
@@ -517,8 +534,8 @@ load (const char *file_name, struct intr_frame *if_) {
 		}
 	}
     // write 못읽게 설정.
-	t->file_holding = file;
-    file_deny_write(file);
+	// t->file_holding = file;
+    // file_deny_write(file);
 
 	/* Set up stack. */
 	if (!setup_stack (if_))
@@ -533,7 +550,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	success = true;
 done:
 	/* We arrive here whether the load is successful or not. */
-	//file_close (file);
+	file_close (file);
 	return success;
 }
 

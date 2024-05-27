@@ -15,8 +15,13 @@
         "filesys.h": "c",
         "process.h": "c",
         "console.h": "c",
-        "file.h": "c",
-        "stdio.h": "c",
-        "vga.h": "c"
+        "vga.h": "c",
+        "lib.h": "c",
+        "main.h": "c",
+        "input.h": "c",
+        "gdt.h": "c",
+        "loader.h": "c",
+        "palloc.h": "c",
+        "inttypes.h": "c"
     }
 }

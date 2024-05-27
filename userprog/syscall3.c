@@ -140,7 +140,7 @@ void halt (void) {
 void exit (int status) {
 	struct thread *curr = thread_current();
 	curr->exit_code = status;
-	printf ("%s: exit(%d)\n", curr->name,status);
+	printf ("%s: 내가왜종료됨? exit(%d)\n", curr->name,status);
 	thread_exit();
 }
 
@@ -295,7 +295,7 @@ int write (int fd, const void *buffer, unsigned size) {
 }
 
 int fork(const char *thread_name, struct intr_frame *f) {
-	printf("can you go to fork\n");
+	// printf("can you go to fork\n");
 	is_valid_addr(thread_name);
 	return process_fork(thread_name, f);
 }

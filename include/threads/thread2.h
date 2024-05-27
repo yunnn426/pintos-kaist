@@ -131,7 +131,7 @@ struct thread {
 
 	int exit_code;
 
-	struct intr_frame copied_if;
+	struct intr_frame *copied_if;
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
