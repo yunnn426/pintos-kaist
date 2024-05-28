@@ -81,6 +81,7 @@ process_create_initd (const char *file_name) {
 	tid = thread_create (token, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
+	sema_down(&(thread_current()->fork_sema));
 	return tid;
 }
 
@@ -208,15 +209,13 @@ __do_fork (void *aux) {
 	 * TODO:       in include/filesys/file.h. Note that parent should not return
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
-    for (int i = 0; i < MAX_FILE_NUMBER; i++)
-    {
-        struct file *file = parent->fd_table[i];
-        if (file == NULL)
-            continue;
-        if ( file > 2) // file, not i 
-            file = file_duplicate(file);
-        current->fd_table[i] = file;
-    }
+	for (int i = 2; i < 128; i++) {
+		struct file *file = parent->fd_table[i];
+		if (file == NULL) 
+			continue;
+		file = file_duplicate(file);
+		current->fd_table[i] = file;
+	}
 	current->cur_fd = parent->cur_fd;
 	sema_up(&current->fork_sema);
 	process_init ();
@@ -259,13 +258,13 @@ process_exec (void *f_name) {
 	
 	/* If load failed, quit. */
 	if (!success)
-		//palloc_free_page(file_name); //이거하면 대체 왜 에러가남??
 		return -1;
 	argument_stack(&argv, argc,&_if);
 	//hex_dump(_if.rsp, _if.rsp, USER_STACK - _if.rsp, true);
 	palloc_free_page (file_name);
 
 	/* Start switched process. */
+	sema_up(&(cur->parent->fork_sema));
 	do_iret (&_if);
 	NOT_REACHED ();
 }
@@ -286,9 +285,6 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	// for(int i=0; i< 500000000; i++) {
-
-	// }
 	struct thread* child = get_child_process(child_tid);
 	/* 예외 처리 발생시-1 리턴*/
 	if (child == NULL) {
@@ -296,11 +292,12 @@ process_wait (tid_t child_tid UNUSED) {
 	}
 	/* 자식프로세스가 종료될 때까지 부모 프로세스 대기(세마포어 이용) */
 	// for(int i=0; i< 1000000000; i++) {
-
 	// }
 	sema_down(&child->wait_sema);
 
 	list_remove(&child->child_elem);
+
+	sema_up(&child->exit_sema);
 
 	int ret = child->exit_code;
 	return ret;
@@ -315,14 +312,10 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-
-	for (int i = 2; i < MAX_FILE_NUMBER; i++) {
-        close(i); //syscall close
-    }
+	process_exit_file();
 	palloc_free_page(curr->fd_table);
-
-	file_close(curr->file_holding); //일단 주석해제.. 에러가 계속남..
 	sema_up(&curr->wait_sema);
+	sema_down(&curr->exit_sema);
 	process_cleanup ();
 }
 
@@ -513,9 +506,6 @@ load (const char *file_name, struct intr_frame *if_) {
 				break;
 		}
 	}
-    // write 못읽게 설정.
-	t->file_holding = file;
-    file_deny_write(file);
 
 	/* Set up stack. */
 	if (!setup_stack (if_))
@@ -530,7 +520,8 @@ load (const char *file_name, struct intr_frame *if_) {
 	success = true;
 done:
 	/* We arrive here whether the load is successful or not. */
-	//file_close (file);
+	sema_up(&t->fork_sema);
+	file_close (file);
 	return success;
 }
 

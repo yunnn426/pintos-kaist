@@ -12,6 +12,7 @@
 #endif
 
 #define USERPROG
+#define FDT_PAGES 2
 
 /* States in a thread's life cycle. */
 enum thread_status {
@@ -112,7 +113,7 @@ struct thread {
 	struct list_elem allelem;
 
 	/* wait, fork and exec */
-	int parent_fd;
+	struct thread *parent;
 	struct list child_list;
 	struct list_elem child_elem;
 
@@ -121,6 +122,7 @@ struct thread {
 	int is_dead;
 
 	struct semaphore fork_sema;
+	struct semaphore exit_sema;
 	struct semaphore wait_sema;
 
 	int **fd_table;

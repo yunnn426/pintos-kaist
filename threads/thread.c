@@ -282,9 +282,7 @@ thread_create (const char *name, int priority,
 	/* 자식 리스트에 추가 */ 
 	list_push_back(&thread_current()->child_list, &t->child_elem);
 
-	/* exit 세마포어 0으로 초기화 */
-
-
+	t->parent = thread_current();
 	
 	/* Add to run queue. */
 
@@ -530,9 +528,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	}
 	t->magic = THREAD_MAGIC;
 
-	// sema_init(&t->exit_sema, 0);
 	sema_init(&t->fork_sema, 0);
 	sema_init(&t->wait_sema, 0);
+	sema_init(&t->exit_sema, 0);
 
 	t->wait_on_lock = NULL;
 	list_init(&t->donation_list);

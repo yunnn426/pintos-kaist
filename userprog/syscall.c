@@ -201,6 +201,10 @@ int open (const char *file) {
 		return -1;
 	}
 
+	if(strcmp(thread_name(), file) == 0) {
+		file_deny_write(tmp); // 현재 읽고 있는 파일은 write를 할 수 없도록 설정합니다.
+	}
+
 	fd = process_add_file(tmp);
 	if (fd == -1) {
 		file_close(tmp);  // file.c 
@@ -209,35 +213,33 @@ int open (const char *file) {
 	return fd;
 }
 
-void close(int fd) {
-	struct file *file = process_get_file(fd);
-	if (file == NULL) {
-		return;
-	}
-	process_close_file(fd);
-}
 
 void seek(int fd, unsigned position) {
-	if (fd < 2) {
+	if (fd < 2 || fd > 128) {
 		return;
 	}
-	struct file *tmp = process_add_file(fd);
-	if (tmp == NULL) {
-		return;
+	struct file *tmp = process_get_file(fd);
+	if (tmp) {
+		file_seek(tmp, position);
 	}
-	file_seek(tmp, position);
 }
 
-
 unsigned tell(int fd) {
-	struct file *open_file = process_get_file(fd);
-	if (fd < 2)
+	if (fd < 2 || fd > 128)
 		return;
-	if (open_file)
-		return file_tell(open_file);
+	struct file *tmp = process_get_file(fd);
+	if (tmp)
+		return file_tell(tmp);
 	return NULL;
 }
 
+void 
+close (int fd) {
+	struct file *open_file = process_get_file(fd);
+	if (open_file == NULL)
+		return;
+	process_close_file(fd);
+}
 
 int filesize (int fd) {
 	struct file *open_file = process_get_file(fd);
@@ -250,6 +252,7 @@ read (int fd, void *buffer, unsigned size) {
 
 	is_valid_addr(buffer);
 	int bytes_read = 0;
+	lock_acquire(&filesys_lock);
 	// 표준 입력 처리: fd가 0인 경우 키보드에서 입력을 읽습니다.
     if (fd == 0) {
         unsigned i;
@@ -259,12 +262,11 @@ read (int fd, void *buffer, unsigned size) {
             ((char*)buffer)[i] = (char)c;
 			bytes_read++;
         }
-        return bytes_read;
 	}
-
-	struct file *file = process_get_file(fd);
-	lock_acquire(&filesys_lock);
-    bytes_read = file_read(file, buffer, size);
+	else {
+		struct file *file = process_get_file(fd);
+    	bytes_read = file_read(file, buffer, size);
+	}
 	lock_release(&filesys_lock);
     return bytes_read;
 }
@@ -273,19 +275,18 @@ int write (int fd, const void *buffer, unsigned size) {
 
 	is_valid_addr(buffer);
 	int writes = 0;
+	lock_acquire(&filesys_lock);
 	if (fd == 1) {
 		putbuf(buffer,size);// void putbuf (const char *, size_t);
+		lock_release(&filesys_lock);
         return size;
-	}
-	else if (fd < 2) {
-		return -1;
 	}
 
 	struct file *file  = process_get_file(fd);
 	if (file == NULL) {
+		lock_release(&filesys_lock);
 		return -1;
 	}
-	lock_acquire(&filesys_lock);
 	writes = file_write(file, buffer, size);
 	lock_release(&filesys_lock);
 	return writes;
