@@ -277,6 +277,13 @@ thread_create (const char *name, int priority,
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
 
+	/* Alloc & Init File Descriptor Table. */
+	t->fdt = palloc_get_page(PAL_ZERO);
+	if (t->fdt == NULL)
+		exit(-1);
+
+	t->fdt[0] = 0;
+	t->fdt[1] = 1;
 	for (int i = MIN_FD; i < MAX_FD; i++) {
 		t->fdt[i] = NULL;
 	}

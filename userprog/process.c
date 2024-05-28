@@ -1,5 +1,3 @@
-// process.c
-
 #include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
@@ -30,12 +28,12 @@ static void initd (void *f_name);
 static void __do_fork (void *);
 
 /* argument passing */
-static void argument_stack(char *argv[], int argc, struct intr_frame *if_);
+void argument_stack(char *argv[], int argc, struct intr_frame *if_);
 
 /* file descriptor table */
-int process_add_file (struct file *f);
-struct file *process_get_file(int fd);
-void process_close_file(int fd);
+// int process_add_file (struct file *f);
+// struct file *process_get_file(int fd);
+// void process_close_file(int fd);
 
 /* General process initializer for initd and other process. */
 static void
@@ -98,27 +96,43 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
  * pml4_for_each. This is only for the project 2. */
 static bool
 duplicate_pte (uint64_t *pte, void *va, void *aux) {
-	struct thread *current = thread_current ();
+	struct thread *curr = thread_current ();
 	struct thread *parent = (struct thread *) aux;
 	void *parent_page;
 	void *newpage;
 	bool writable;
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
-
 	/* 2. Resolve VA from the parent's page map level 4. */
-	parent_page = pml4_get_page (parent->pml4, va);
-
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
+
+	/* 부모 프로세스의 프레임 정보를 저장한다. */
+	// curr->parent_tf = curr->tf;
+	
+	/* 부모의 pml4를 이용해 가상 주소를 물리 주소로 매핑한다. */
+	parent_page = pml4_get_page (parent->pml4, va);
+	/* 만약 부모의 페이지가 커널 가상 주소를 가리킨다면 리턴한다. */
+	// if (is_kernel_vaddr(parent_page))
+		// return; 
+
+	/* 자식 프로세스를 위해 새로운 유저 공간의 페이지를 할당한다. */
+	// newpage = palloc_get_page(PAL_USER);
+
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
+	/* 4. TODO: 부모 프로세스의 페이지를 새로운 페이지로 복제하고
+	 *    TODO: 부모 프로세스의 페이지가 쓰기 가능한지 확인한다.
+	 *    TODO: 결과에 따라 복제된 페이지의 쓰기 가능 속성을 설정한다. */
+	// newpage = parent_page;
+	// writable = is_writable(parent_page);
+
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
-	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
+	if (!pml4_set_page (curr->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
 	}
 	return true;
@@ -171,7 +185,7 @@ error:
 	thread_exit ();
 }
 
-static void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
+void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
     char *argv_addr[128];
 
     /* 2. 스택 위에 문자열을 추가한다. */
@@ -190,7 +204,7 @@ static void argument_stack(char *argv[], int argc, struct intr_frame *if_) {
 		// *(uintptr_t *)(if_->rsp) = 0;
     }
 
-    /* 3. 주소의 끝을 표시하는 null sentinel 추가한다. -> 채윤언니 파쿠리해옴 필요없음
+    /* 3. 주소의 끝을 표시하는 null sentinel 추가한다. 
             매개변수의 주소를 차례대로 추가한다. */
     if_->rsp -= sizeof(char *);
     memset(if_->rsp, 0, sizeof(char *));					// memset을 사용하자
@@ -270,7 +284,7 @@ process_add_file (struct file *f) {
 	/* 현재 스레드의 fdt를 순회하며
 		비어있는 fd 값을 찾는다. */
 	int fd = -1;
-	for (int i = 2; i < 130; i++) {
+	for (int i = 2; i < 128; i++) {
 		if (curr->fdt[i] != NULL)
 			continue;
 		/* 비어있는 fd에 새로운 파일을 할당한다. */
@@ -284,6 +298,8 @@ process_add_file (struct file *f) {
 /* fd에 해당하는 파일 객체를 반환한다. */
 struct 
 file *process_get_file(int fd) {
+	if (fd < 2 || fd >= 128 || fd == NULL)
+		return NULL;
 	struct thread *curr = thread_current();
 
 	return curr->fdt[fd];
@@ -294,8 +310,16 @@ file *process_get_file(int fd) {
 	fd에 해당하는 엔트리를 초기화한다. */
 void 
 process_close_file(int fd) {
+	if (fd < 2 || fd >= 128 || fd == NULL)
+		return NULL;
 	struct thread *curr = thread_current();
+	struct file *f = process_get_file(fd);
+	
+	if (!f)
+		return NULL;
+	
 	curr->fdt[fd] = NULL;
+	file_close(f);
 }
 
 

@@ -248,10 +248,10 @@ open (const char *file) {
 int 
 filesize (int fd) {
 	struct thread *curr = thread_current();
-	struct file *f = curr->fdt[fd];
-	int size = file_length(f);
-
-	return size;
+	struct file *f = process_get_file(fd);
+	if (f)
+		return file_length(f);
+	return -1;
 }
 
 /* fd로 열려있는 파일에 대해
@@ -274,7 +274,7 @@ read (int fd, void *buffer, unsigned size) {
 	/* reads fd to buffer. */
 	else {
 		struct thread *curr = thread_current();
-		struct file *f = curr->fdt[fd];
+		struct file *f = process_get_file(fd);
 	
 		return file_read(f, buffer, size);
 	}
@@ -292,7 +292,7 @@ write (int fd, const void *buffer, unsigned size) {
 	check_address(buffer);
 
 	struct thread *curr = thread_current();
-	struct file *f = curr->fdt[fd];
+	struct file *f = process_get_file(fd);
 
 	/* stdout */
 	if (fd == 1) {
@@ -318,7 +318,7 @@ seek (int fd, unsigned position) {
 		return;
 
 	struct thread *curr = thread_current();
-	struct file *f = curr->fdt[fd];
+	struct file *f = process_get_file(fd);
 	file_seek(f, position);
 }
 
@@ -330,7 +330,7 @@ tell (int fd) {
 		exit(-1);
 
 	struct thread *curr = thread_current();
-	struct file *f = curr->fdt[fd];
+	struct file *f = process_get_file(fd);
 	
 	return file_tell(f);
 }
@@ -341,9 +341,9 @@ void
 close (int fd) {
 	if (fd < 2 || fd >= MAX_FD || fd == NULL)
 		exit(-1);
-	struct thread *curr = thread_current();
-	struct file *f = curr->fdt[fd];
 
-	curr->fdt[fd] = NULL;		
-	file_close(f);				
+	struct file *f = process_get_file(fd);
+	if (!f) 
+		exit(-1);
+	process_close_file(fd);		
 }

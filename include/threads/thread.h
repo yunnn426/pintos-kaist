@@ -35,7 +35,7 @@ typedef int tid_t;
 
 /* for file directory table. */
 #define MIN_FD 2
-#define MAX_FD 130
+#define MAX_FD 128
 
 /* A kernel thread or user process.
  *
@@ -114,7 +114,9 @@ struct thread {
 	struct list_elem allelem;
 
 	int exit_status;
-	struct file *fdt[MAX_FD];				/* file descriptor table, 2 + 128 */
+	/* struct file *로 주니까 kernel stack overflow */
+	/* file 구조체를 가리키는 주소를 담은 배열로 수정 */
+	int **fdt;				/* file descriptor table */
 	int lastfd;
 
 #ifdef USERPROG
@@ -128,6 +130,7 @@ struct thread {
 
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
+	struct intr_frame parent_tf;		/* parent interrupt frame */
 	unsigned magic;                     /* Detects stack overflow. */
 };
 
@@ -154,6 +157,7 @@ const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
+void test_max_priority(void);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
