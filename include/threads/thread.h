@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "threads/interrupt.h"
 #include "threads/fixed_point.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -113,11 +114,24 @@ struct thread {
 	int recent_cpu;
 	struct list_elem allelem;
 
-	int exit_status;
 	/* struct file *로 주니까 kernel stack overflow */
 	/* file 구조체를 가리키는 주소를 담은 배열로 수정 */
 	int **fdt;				/* file descriptor table */
-	int lastfd;
+	int maxfd;
+
+	/* process hierarchy */
+	struct intr_frame parent_if;		/* parent interrupt frame */
+	struct thread *parent;
+	struct list_elem child_elem;
+	struct list child_list;
+
+	int is_loaded;
+	int is_exit;
+	struct semaphore wait_sema; 		/* wait <-> exit */
+	struct semaphore exit_sema;
+	struct semaphore load_sema;
+	int exit_status;
+
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -130,7 +144,6 @@ struct thread {
 
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
-	struct intr_frame parent_tf;		/* parent interrupt frame */
 	unsigned magic;                     /* Detects stack overflow. */
 };
 

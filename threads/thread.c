@@ -117,7 +117,7 @@ thread_init (void) {
 	};
 	lgdt (&gdt_ds);
 
-	/* Init the globla thread context */
+	/* Init the global thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&sleep_list);
@@ -278,9 +278,14 @@ thread_create (const char *name, int priority,
 	t->tf.eflags = FLAG_IF;
 
 	/* Alloc & Init File Descriptor Table. */
+	t->maxfd = 2;
 	t->fdt = palloc_get_page(PAL_ZERO);
-	if (t->fdt == NULL)
-		exit(-1);
+	
+	if (t->fdt == NULL) {
+		palloc_free_page(t);
+        return TID_ERROR;
+		// exit(-1);
+	}
 
 	t->fdt[0] = 0;
 	t->fdt[1] = 1;
@@ -290,8 +295,14 @@ thread_create (const char *name, int priority,
 
 	list_push_back(&all_list, &t->allelem);
 
+	/* 스레드가 실행 중이다가 thread_create를 호출하여 
+		새로운 스레드 t가 생성된 상황이다. 
+		- 현재 실행중인 스레드의 자식 리스트에 생성된 스레드 t를 추가 */
+	list_push_back(&thread_current()->child_list, &t->child_elem);
+	
 	/* Add to run queue. */
 	thread_unblock (t);
+
 	if(!thread_mlfqs) preempt();
 
 	return tid;
@@ -527,6 +538,13 @@ init_thread (struct thread *t, const char *name, int priority) {
 
 	t->nice = NICE_DEFAULT;
 	t->recent_cpu = RECENT_CPU_DEFAULT;
+
+	/* init semaphores for process hierarchy. */
+	sema_init(&t->wait_sema, 0);
+	sema_init(&t->exit_sema, 0);
+	sema_init(&t->load_sema, 0);
+
+	list_init(&t->child_list);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

@@ -229,6 +229,15 @@ pml4_get_page (uint64_t *pml4, const void *uaddr) {
  * otherwise it is read-only.
  * Returns true if successful, false if memory allocation
  * failed. */
+
+/* 주어진 가상 주소를 페이지 맵 레벨 4(PML4) 테이블에서 특정 물리 페이지에 매핑한다. */
+/* 페이지 테이블 구조 */
+/* PML4 (Page Map Level 4)
+		-----> PDPT (Page Directory Pointer Table)
+				-----> PD (Page Directory)
+						-----> PT (Page Table)
+								- 여기에 Page Table Entry가 존재한다.  
+								- 실제 물리 메모리 프레임의 주소를 가리킨다. */
 bool
 pml4_set_page (uint64_t *pml4, void *upage, void *kpage, bool rw) {
 	ASSERT (pg_ofs (upage) == 0);

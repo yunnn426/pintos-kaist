@@ -13,7 +13,8 @@
 #include "userprog/process.h"
 
 #include <lib/kernel/console.h>
-
+#include "threads/palloc.h"
+#include "lib/string.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -79,11 +80,30 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		exit(status);
 		break;
 	}
+
+	case SYS_FORK:
+	{
+		const char *thread_name = f->R.rdi;
+		/* 지훈쿤 방식 */
+		thread_current()->parent_if = *f;
+		f->R.rax = fork(thread_name);
+
+		/* 만도 방식 */
+		// f->R.rax = sysfork(thread_name, f);
+		break;
+	}
 	
 	case SYS_EXEC:
 	{
 		char *file = f->R.rdi;
 		f->R.rax = exec(file);
+		break;
+	}
+
+	case SYS_WAIT:
+	{
+		pid_t pid = f->R.rdi;
+		f->R.rax = wait(pid);
 		break;
 	}
 
@@ -172,18 +192,58 @@ halt(void) {
 void 
 exit(int status) {
 	struct thread *t = thread_current();
+	t->exit_status = status;
 	printf("%s: exit(%d)\n", t->name, status);
 	thread_exit();
+}
+
+/* 만도 방식 */
+/* struct intr_frame을 인자로 받아야 하는 이유? */
+/* : 레지스터로부터 인터럽트 프레임을 받지 못하면 이전 문맥의 인터럽트 프레임을 받을 방법이 없다.
+	커널쪽 syscall.c(@lib/user)에는 fork(인자 1개)로 시스템 콜이 호출되지만
+	중간에 레지스터를 거쳐서 넘어오기 때문에 커널쪽 fork()에서는 인터럽트 프레임을 인자로 받지 않아도 된다. */
+// pid_t 
+// sysfork (c)
+
+/* 지훈쿤 방식 */
+/* syscall_handler에서 받아오는 f가 있으므로 
+	case: SYS_FORK에서 fork 호출 전에 부모if 안에 받아온 f를 넣어주었다. */
+pid_t 
+fork (const char *thread_name) {
+	return process_fork(thread_name, &thread_current()->parent_if);
 }
 
 /* 프로세스를 실행시킨다.
 	cmd_line으로 받아온 프로그램명 혹은 인자들을 전달한다. */
 int 
 exec (const char *cmd_line) {
-	check_address(cmd_line);
-	int result = process_exec(cmd_line);
+	/* process_execute() 함수를 호출하여 자식 프로세스 생성 */
+	/* 생성된 자식 프로세스의 프로세스 디스크립터를 검색 */
+	/* 자식 프로세스의 프로그램이 적재될 때까지 대기*/
+	/* 프로그램 적재 실패 시 -1 리턴*/
+	/* 프로그램 적재 성공 시 자식 프로세스의 pid 리턴*/
 
+	check_address(cmd_line);
+
+	/* const char는 수정할 수 없으므로 복사해서 사용한다. */
+	char *cmd_line_copy = palloc_get_page(PAL_ZERO);
+	if (cmd_line_copy == NULL)
+		exit(-1);
+
+	strlcpy(cmd_line_copy, cmd_line, PGSIZE);
+
+	int result = process_exec(cmd_line_copy);
+	if (result == -1)
+		exit(-1);
+		
 	return result;
+}
+
+int 
+wait (pid_t pid) {
+	int status = process_wait(pid);
+
+	return status;
 }
 
 /* "이름: file, 사이즈: initial_size"
@@ -210,7 +270,7 @@ remove (const char *file) {
 	check_address(file);
 	bool result = filesys_remove(file);
 
-	return false;
+	return result;
 }
 
 /* 유저 영역을 벗어난 경우 프로세스를 종료한다. */

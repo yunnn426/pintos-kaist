@@ -3,6 +3,7 @@
 
 #include <include/lib/user/syscall.h>
 #include <stdbool.h>
+#include <include/threads/interrupt.h>
 
 void syscall_init (void);
 
@@ -23,6 +24,11 @@ unsigned tell (int fd);
 void close (int fd);
 
 /* process hierarchy */
+/* 지훈 */
 pid_t fork (const char *thread_name);
+/* 만도 */
+// pid_t sysfork (const char *thread_name, struct intr_frame *f);
+
+int wait (pid_t pid);
 
 #endif /* userprog/syscall.h */
