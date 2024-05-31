@@ -125,7 +125,7 @@ struct thread {
 	struct semaphore exit_sema;
 	struct semaphore wait_sema;
 
-	int **fd_table;
+	struct file **fd_table;
     int cur_fd;
 
 	int exit_code;

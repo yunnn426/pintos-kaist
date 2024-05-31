@@ -108,13 +108,15 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* intr frame 복사 */
 	struct thread *cur = thread_current();
 	memcpy(&cur->copied_if, if_, sizeof(struct intr_frame));
-
+	
 	tid_t tid = thread_create (name,
 			PRI_DEFAULT, __do_fork, cur);
 	if (tid == TID_ERROR) // Error handling
 		return TID_ERROR;
  
 	struct thread *child = get_child_process(tid);
+	if (child == NULL) 
+		return TID_ERROR;
 	sema_down(&child->fork_sema);
 
 	if (child->exit_code == -1) {
@@ -281,7 +283,6 @@ process_exec (void *f_name) {
  * does nothing. */
 int
 process_wait (tid_t child_tid UNUSED) {
-	//printf("wait  ㅜㅜ\n");
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
@@ -304,6 +305,7 @@ process_wait (tid_t child_tid UNUSED) {
 
 }
 
+
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
@@ -313,7 +315,7 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 	process_exit_file();
-	palloc_free_page(curr->fd_table);
+	palloc_free_multiple(curr->fd_table,FDT_PAGES);
 	sema_up(&curr->wait_sema);
 	sema_down(&curr->exit_sema);
 	process_cleanup ();

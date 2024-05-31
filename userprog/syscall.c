@@ -165,14 +165,15 @@ exec(const char *cmd_line) {
 
 	//NOT_REACHED();
 	//return 0;
-	
-	int ssize = strlen(cmd_line) + 1;
+	struct thread * cur = thread_current();
 	
 	char *fn_copy = palloc_get_page (0); // 이거 임포트 제대로 안돼서 에러남.
 	if (fn_copy == NULL) { 
 		exit(-1); 
 	}
 	strlcpy (fn_copy, cmd_line, PGSIZE);
+	sema_down(&(cur->fork_sema));
+
 	if (process_exec(fn_copy) == -1) { 
 		// printf("process_exec failed for: %s\n", cmd_line);
 		exit(-1);

@@ -286,12 +286,10 @@ thread_create (const char *name, int priority,
 	
 	/* Add to run queue. */
 
-	t->fd_table = palloc_get_page(PAL_ZERO);
+	t->fd_table = palloc_get_multiple(PAL_ZERO,FDT_PAGES);
 	
     if (t->fd_table == NULL) 
         return TID_ERROR;
-	t->fd_table[0] = 0;
-	t->fd_table[1] = 1;
 	for (int i=2; i<MAX_FILE_NUMBER; i++) {
 		t->fd_table[i] = NULL;
 	}
